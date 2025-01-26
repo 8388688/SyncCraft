@@ -3,11 +3,11 @@ from os.path import dirname, normpath, samefile, exists
 from tkinter.filedialog import askdirectory
 
 from pk_gui import *
+from pk_misc import update_sc
+import threading
+
 
 # from distutils import *
-
-gl_valid_ui = True
-gl_user_input = ""
 
 
 def get_conf():
@@ -45,11 +45,11 @@ def fix_conf(del_invalid_path=False, fix_entry: ttk.Combobox | tk.Entry | ttk.En
         fix_entry.config(
             values=gs_config["archives"][0: min(len(gs_config["archives"]), gs_config["maxShowArchiveHistory"])]
         )
-    gs_config.update({"autoupdate": gs_config.get("autoupdate", True)})
+    gs_config.update({"autoUpdate": gs_config.get("autoUpdate", None)})
 
 
 def global_settings():
-    global gl_user_input, gl_valid_ui
+    profile_ch = 0
 
     def browse():
         file = askdirectory(mustexist=True)
@@ -58,8 +58,7 @@ def global_settings():
             entry.insert(0, normpath(file))
 
     def save_and_exit():
-        global gl_user_input, gl_valid_ui
-        nonlocal valid_ui
+        nonlocal valid_ui, profile_ch
         valid_ui = True
         for index in gs_config["archives"]:
             if exists(user_input.get()) and exists(index) and samefile(user_input.get(), index):
@@ -74,14 +73,24 @@ def global_settings():
             # gs_config["archives"] = gs_config["archives"]
             pass
         put_conf()
-        gl_user_input = user_input.get()
-        gl_valid_ui = valid_ui
         if exit_when_launch.get():
             root.destroy()
         else:
-            return ShadowCraft(user_input.get())
+            profile_ch += 1
+            # root.withdraw()
+            if not profile_ch > 1:
+                root.quit()
+            else:
+                root.mainloop()
             # return global_settings()
-        return valid_ui, user_input.get()
+
+    if gs_config.get("autoUpdate") is None:
+        user_ch = askyesnocancel("自动更新", f"你是否允许 {TITLE} 启动时自动检查更新？")
+        if user_ch is None:
+            pass
+        else:
+            gs_config.update({"autoUpdate": user_ch})
+        put_conf()
 
     root = tk.Tk()
     root.title(ShadowCraft.TITLE)
@@ -101,7 +110,8 @@ def global_settings():
     entry.bind("<Return>", lambda x: save_and_exit())
     entry.insert(0, gs_config["archives"][0])
     entry.grid(row=1, column=0, columnspan=3, padx=10, pady=5)
-    tk.Label(root, text="输入同步文件夹的根路径").grid(row=0, column=0, columnspan=3, padx=10, pady=5)
+    label = tk.Label(root, text="输入同步文件夹的根路径")
+    label.grid(row=0, column=0, columnspan=3, padx=10, pady=5)
     tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=10,
               text="确定≌", command=save_and_exit).grid(row=2, column=0, padx=10, pady=5)
     tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=10,
@@ -118,14 +128,21 @@ def global_settings():
                    text="启动完成后退出", variable=exit_when_launch, command=lambda: None).grid(
         row=3, column=2, padx=10, pady=5)
 
+    if gs_config.get("autoUpdate"):
+        label.config(text="[检查更新中]" + label["text"])
+        update_th = threading.Thread(target=lambda: update_sc(root), daemon=True)
+        update_th.start()
+        # update(root, record_fx)
+
     root.mainloop()
+    return valid_ui, user_input.get()
 
 
-class ShadowCraft(PeekerGui):
+class ShadowCraft(Pk_Stray):
     def __init__(self, syncRoot_fp):
         super().__init__(syncRoot_fp)
         if pk.is_exec():
-            self.execute_fp = self.get_exec()
+            self.execute_fp = pk.get_exec()
         else:
             self.execute_fp = __file__
 
@@ -168,8 +185,7 @@ if __name__ == '__main__':
         # print(argv[index_])
         profile = (True, argv[index_])
     else:
-        global_settings()
-        profile = gl_valid_ui, gl_user_input
+        profile = global_settings()
     if not profile[0]:
         pk.sys_exit(0)
 

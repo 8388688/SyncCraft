@@ -1,8 +1,6 @@
 from __future__ import print_function
 import pywintypes
-import sys
 import win32api
-import win32file
 import win32process
 import win32security
 import ntsecuritycon
@@ -19,7 +17,8 @@ from traceback import format_exc
 import wmi
 
 from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
-from pk_misc import is_admin, __version__, windll, is_exec, TITLE
+from pk_misc import is_admin, __version__, windll, is_exec, TITLE, get_time, get_exec
+from file_op import *
 
 
 class Peeker:  # TODO: 参考“点名器.py”
@@ -71,7 +70,7 @@ class Peeker:  # TODO: 参考“点名器.py”
 
         self.protection = True
         self.hidden = True
-        self.execute_fp = self.get_exec()
+        self.execute_fp = get_exec()
 
         self.__cursors_src = []  # 存储格式为绝对路径
         self.__cursors_dst = []  # 存储格式也是绝对路径
@@ -89,6 +88,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.reserved_size = 0
         self.wait_busy_loop = None
         self.profileSettings = {}
+        self.warnings = {}
         # 下面这一行才是真正的赋值
         # self.extract_config() <-- 已移入 setup() 函数中
 
@@ -115,6 +115,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.userdata.update({
             "run_times": self.run_times, "last_run_times": self.last_run_times
         })
+        self.conf_config.update({"userdata": self.userdata})
         self.profileSettings.update({
             "volumeId_whitelist": self.profileSettings.get("volumeId_whitelist", []),
             "volumeId_blacklist": self.profileSettings.get("volumeId_blacklist", []),
@@ -123,7 +124,6 @@ class Peeker:  # TODO: 参考“点名器.py”
             "file_blacklist": self.profileSettings.get("file_blacklist", []),
             "file_whitelist": self.profileSettings.get("file_whitelist", [])
         })
-        self.conf_config.update({"userdata": self.userdata})
         self.conf_config.update({"profileSettings": self.profileSettings})
         self.record_fx("Upgrade Config 已更新")
 
@@ -186,14 +186,26 @@ class Peeker:  # TODO: 参考“点名器.py”
     def __get_id(self):
         return get_md5(self.SYNC_ROOT_FP)
 
-    @staticmethod
-    def __get_freespace_shutil(folder):
-        _, _, free = disk_usage(folder)
-        return free
+    def join_cmdline(self, *args):
+        for fx in args:
+            if callable(fx):
+                fx()
+            else:
+                self.record_fx("Error:", str(fx), "不可调用。")
 
-    @staticmethod
-    def __get_time(format_="%Y-%m-%dT%H.%M.%SZ"):
-        return strftime(format_, localtime(time()))
+    def get_fromkey(self, keyword, src=None):
+        if src is None:
+            tmp = self.profileSettings.get(keyword, None)
+        else:
+            tmp = self.cursors.get(src, {}).get(keyword, self.profileSettings.get(keyword, None))
+        return tmp
+
+    def get_volume_label(self, drive):
+        try:
+            return win32api.GetVolumeInformation(drive)[0]
+        except pywintypes.error:
+            self.record_fx(f"执行出错：\n{format_exc()}")
+            return None
 
     def __label2mountId(self, drive):
         for i in listvolumes():
@@ -217,17 +229,13 @@ class Peeker:  # TODO: 参考“点名器.py”
             self.record_fx(f"执行出错：\n{format_exc()}")
             return None
 
-    @staticmethod
-    def __set_volume_label(label, drive):
-        win32file.SetVolumeLabel(drive, label)
-
     def upgrade_exclude_dir(self):
         self.exclude_in_del = (self.log_dirp, self.conf_fp) + tuple(self.synced_archives)
         self.record_fx(f"更新排除文件列表 {self.exclude_in_del}")
 
     def record_ln(self, *__text, sep=" ", end="\n", local_log=None, global_log=None):
         tmp = sep.join(map(str, __text)) + end
-        now_time = self.__get_time()
+        now_time = get_time()
         if (local_log is None and self.log_fiet_live) or local_log:
             self.log_fiet.write(f"[{now_time}]" + tmp)
         # self.log_fiet.flush()
@@ -293,13 +301,6 @@ class Peeker:  # TODO: 参考“点名器.py”
                 sys_exit(0)
             else:
                 return False
-
-    @staticmethod
-    def get_exec():
-        if is_exec():
-            return sys.executable  # 获取打包后可执行文件的真实路径
-        else:
-            return abspath(__file__)  # 获取脚本路径
 
     def update_cursor(self):
         self.__cursors_src = list(self.cursors.keys())
@@ -535,15 +536,14 @@ class Peeker:  # TODO: 参考“点名器.py”
         else:
             self.record_fx(f"检查卷标时出现错误 - {file_path} 文件不存在")
             tmp2 = False
-        lab_blk = self.cursors[file_path].get("label_blacklist", self.profileSettings.get("label_blacklist", []))
+        lab_blk = self.get_fromkey("label_blacklist", file_path)
         if not lab_blk or tmp2 in lab_blk:
             cur_exists_ch += 1 * 2 ** 6
             cur_exists_list.update({"label_in_blacklist": True})
         else:
             cur_exists_ch += 0
             cur_exists_list.update({"label_in_blacklist": False})
-        if tmp2 in self.cursors[file_path].get(
-                "label_whitelist", self.profileSettings.get("label_whitelist", [])):
+        if tmp2 in self.get_fromkey("label_whitelist", file_path):
             cur_exists_ch += 1 * 2 ** 7
             cur_exists_list.update({"label_in_whitelist": True})
         else:
@@ -605,7 +605,7 @@ class Peeker:  # TODO: 参考“点名器.py”
                         if not self.sync_flag:
                             self.record_fx("用户终止了同步")
                             break
-                        if self.__get_freespace_shutil(self.cursors[i]["dst"]) <= self.reserved_size:
+                        if get_freespace_shutil(self.cursors[i]["dst"]) <= self.reserved_size:
                             self.record_fx(f"硬盘空间不足，停止 {i} 的同步")
                             break
                         else:
@@ -764,7 +764,12 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.record_fx("终止同步：等待当前操作完成")
         self.sync_flag = False
 
-    def run_until(self, figures: int = INF, end_time: float = INF, delay: float = 0.0, factor2=AND, save=False):
+    def run_until(self, *args, **kwargs):
+        self.record_fx("调用", self.run_until.__name__, "函数")
+        for i in self.run_until_gen(*args, **kwargs):
+            pass
+
+    def run_until_gen(self, figures: int = INF, end_time: float = INF, delay: float = 0.0, factor2=AND, save=False):
         # 重复执行 run_once() 直到所给条件不成立
         # 当条件被设为 INF 时，意味着永远为真。
         # 没错，不带任何参数的 `run_until()` 就是一个死循环
@@ -784,8 +789,8 @@ class Peeker:  # TODO: 参考“点名器.py”
                 else:
                     break
             done = __can_peek()
-            self.record_fx(f"{self.run_until.__name__}: 等待 {delay} 秒")
+            self.record_fx(f"{self.run_until_gen.__name__}: 等待 {delay} 秒")
             self.wait_fx(delay)
 
         self.sync_flag = True
-        self.record_fx("同步旗标已解锁")
+        self.record_fx("run_until: 同步旗标已解锁")
