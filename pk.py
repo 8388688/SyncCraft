@@ -17,7 +17,8 @@ from traceback import format_exc
 import wmi
 
 from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
-from pk_misc import is_admin, __version__, windll, is_exec, TITLE, get_time, get_exec
+from pk_misc import is_admin, __version__, windll, is_exec, TITLE, get_time, get_exec, global_settings_fp, \
+    global_settings_dirp
 from file_op import *
 
 

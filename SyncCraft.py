@@ -3,7 +3,7 @@ from os.path import dirname, normpath, samefile, exists
 from tkinter.filedialog import askdirectory
 
 from pk_gui import *
-from pk_misc import update_sc
+from pk_misc import update_sc, global_settings_dirp, global_settings_fp
 import threading
 
 
@@ -148,10 +148,6 @@ class ShadowCraft(Pk_Stray):
 
 
 if __name__ == '__main__':
-    global_settings_dirp = pk.join(getenv("APPDATA"), TITLE)
-    pk.safe_md(global_settings_dirp, quiet=True)
-    global_settings_fp = pk.join(global_settings_dirp, "globalsettings.sc_json")
-
     gs_config = get_conf()
     fix_conf(del_invalid_path=False)
 

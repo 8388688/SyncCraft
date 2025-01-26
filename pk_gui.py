@@ -17,7 +17,7 @@ from traceback import format_exc
 import pk
 from json.decoder import JSONDecodeError
 from pk import wait
-from pk_misc import help_text, topmost_st, TITLE, rate_list
+from pk_misc import help_text, topmost_st, TITLE, rate_list, update_sc
 from simple_tools import list2str, pass_
 import pystray
 from PIL import Image
@@ -195,6 +195,10 @@ class PeekerGui(pk.Peeker, Treasure):
             "save": ("<Control-s>", "Ctrl+S", "保存", lambda x=None: self.save(ren=False)),
             "save_arc": ("<Control-Shift-S>", "Ctrl+Shift+S", "保存 & 归档", lambda x=None: self.save(ren=True)),
             "help": ("<F1>", "F1", "获取帮助", lambda x=None: self.gui_help("initial")),
+            "check_for_update": (
+                "<Control-KeyRelease-U>", "Ctrl+U", "检查更新", lambda x=None: update_sc(self, self.record_fx)),
+            "check_for_fakeupdate": ("<Triple-Control-KeyRelease-u>", "Ctrl+U+U+U", "伪装旧版本以触发更新",
+                                     lambda x=None: update_sc(self, self.record_fx, 0)),
             "read_arc": ("<Alt-r>", "Alt+R", "检查存档",
                          lambda x=None: self.gui_unlock(unlock_pre=False, del_=False, untie=True, read=True)),
             "unlock_arc_r": ("<Alt-Shift-R>", "Alt+Shift+R", "解锁存档并查看",
@@ -1314,6 +1318,12 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
                 ret += 1
             return x_cp, ret
 
+        def forget_all():
+            misc_frame.grid_forget()
+            view_frame.grid_forget()
+            syncFactor_frame.grid_forget()
+            gs_frame.grid_forget()
+
         def upgrade_bw_box():
             bw_list.delete(1.0, END)
             for j in self.profileSettings.get(bw_list_rainbow[bw_combobox.get()], []):
@@ -1333,10 +1343,32 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
             self.remove_empty_in_bw_list()
             self.log_insert_mode.set(log_mode_rainbow[log_mode_box.get()])
             self.OnQuit.set(on_quit_rainbow[on_quit_combobox.get()])
-
+            #####################################################
+            if pk.exists(pk.global_settings_fp):
+                gs_fiet = open(pk.global_settings_fp, "r", encoding="utf-8")
+                ret = pk.loads(gs_fiet.read())
+            else:
+                gs_fiet = open(pk.global_settings_fp, "w", encoding="utf-8")
+                gs_fiet.write("{}")
+                ret = {}
+            gs_fiet.close()
+            ret.update({"autoUpdate": autoupdate_rainbow[update_combobox.get()]})
+            gs_fiet = open(pk.global_settings_fp, "w", encoding="utf-8")
+            gs_fiet.write(pk.dumps(ret))
+            gs_fiet.close()
+            #####################################################
             self.upgrade_config()
             self.global_window_destroyed(win)
 
+        win = tk.Toplevel(self)
+        self.global_window_initialize(win, "实例设置", self)
+
+        view_frame = ttk.Frame(win)
+        syncFactor_frame = ttk.Frame(win)
+        gs_frame = ttk.Frame(win)
+        misc_frame = ttk.Frame(win)
+
+        mode_rainbow = {"视图": view_frame, "同步": syncFactor_frame, "全局设置": gs_frame, "其他": misc_frame}
         bw_list_rainbow = {
             "卷标黑名单": "label_blacklist", "卷标白名单": "label_whitelist", "卷 ID 黑名单": "volumeId_blacklist",
             "卷 ID 白名单": "volumeId_whitelist",
@@ -1344,27 +1376,23 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
         }
         log_mode_rainbow = {"顺序输出": END, "倒序输出": "0"}  # 倒序输出理应是整型，但那样就无法装在 StringVar 变量中了
         on_quit_rainbow = {"每次都询问": 0, "最小化到系统托盘": 1, f"退出 {self.TITLE}": 2}
+        autoupdate_rainbow = {"未配置（每次都询问）": None, "已启用": True, "已禁用": False}
 
-        win = tk.Toplevel(self)
-        self.global_window_initialize(win, "实例设置", self)
-
-        view_frame = ttk.Frame(win)
-        syncFactor_frame = ttk.Frame(win)
-
-        win.bind("<KeyRelease-a>", lambda x: view_frame.grid(row=0, column=0))
-        win.bind("<KeyRelease-A>", lambda x: view_frame.grid_forget())
-        win.bind("<KeyRelease-b>", lambda x: syncFactor_frame.grid(row=0, column=0))
-        win.bind("<KeyRelease-B>", lambda x: syncFactor_frame.grid_forget())
+        # win.bind("<KeyRelease-a>", lambda x: view_frame.grid(row=0, column=0))
+        # win.bind("<KeyRelease-b>", lambda x: syncFactor_frame.grid(row=0, column=0))
+        # win.bind("<KeyRelease-c>", lambda x: gs_frame.grid(row=0, column=0))
+        # win.bind("<KeyRelease-d>", lambda x: misc_frame.grid(row=0, column=0))
 
         tip_a = ttk.Label(syncFactor_frame, text="当硬盘空间小于此数值时，停止同步")
         # tip_b = ttk.Label(win, text="（时间控制更为精准，但同时也会带来更高的 CPU 负担）")
         tip_c = ttk.Label(view_frame, text="主题")
         tip_d = ttk.Label(view_frame, text="窗口透明度")
         tip_e = ttk.Label(view_frame, text="关闭窗口时")
+        tip_f = ttk.Label(gs_frame, text="启动时检查更新")
         busy_loop_var = tk.StringVar()
         # busy_loop_var = tk.BooleanVar()  # BooleanVar() 无法存储 None 值
         busy_loop_var.set(self.wait_busy_loop)
-        busy_loop_chbtn = ttk.Checkbutton(win, text="使用 busy_loop 时间等待", variable=busy_loop_var, width=20)
+        busy_loop_chbtn = ttk.Checkbutton(misc_frame, text="使用 busy_loop 时间等待", variable=busy_loop_var, width=20)
         size_box = self.get_side2side_entry(
             syncFactor_frame, ttk.Spinbox, max_=1024, from_=0, to=1024 - 1, width=20, increment=1)
         rate_combobox = ttk.Combobox(syncFactor_frame, values=rate_list, width=4)
@@ -1381,13 +1409,15 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
         alpha_scale = ttk.Scale(view_frame, from_=10, to=100, variable=self.alpha_mode,
                                 # 为了方便辨认窗口，这里不允许将 -alpha 值由滑杆调整为 0
                                 length=160, command=lambda x: win.attributes("-alpha", float(x) / 100))
-        dis_sub_chbtn = ttk.Checkbutton(win, text="disabledWhenSubWindow", variable=self.disabledWhenSubWindow,
+        dis_sub_chbtn = ttk.Checkbutton(misc_frame, text="disabledWhenSubWindow", variable=self.disabledWhenSubWindow,
                                         state=DISABLED)
         reset_warning_btn = ttk.Button(view_frame, text=self.KEY_BOARD["reset_warnings"][2],
                                        style=self.BUTTON_STYLE_USE,
                                        command=self.KEY_BOARD["reset_warnings"][3])
         on_quit_combobox = ttk.Combobox(view_frame, state="readonly", values=tuple(on_quit_rainbow.keys()))
+        update_combobox = ttk.Combobox(gs_frame, state="readonly", values=tuple(autoupdate_rainbow.keys()))
 
+        mode_box = ttk.Combobox(win, state="readonly", values=tuple(mode_rainbow.keys()))
         ok_button = ttk.Button(win, text="ok.", style=self.BUTTON_STYLE_USE, command=save_save)
 
         size_box.delete(0, END)
@@ -1406,9 +1436,15 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
         for i in on_quit_rainbow.keys():
             if on_quit_rainbow[i] == self.OnQuit.get():
                 on_quit_combobox.set(i)
+        update_combobox.set(update_combobox["values"][0])
         for i in log_mode_rainbow.keys():
             if log_mode_rainbow[i] == self.log_insert_mode.get():
                 log_mode_box.set(i)
+
+        mode_box.bind("<<ComboboxSelected>>", lambda x: self.join_cmdline(
+            lambda: forget_all(), lambda: mode_rainbow[mode_box.get()].grid(
+                row=0, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)))
+        mode_box.set(mode_box["values"][0])
 
         tip_a.grid(row=1, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         # tip_b.grid(row=2, column=1, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
@@ -1429,8 +1465,11 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
         reset_warning_btn.grid(row=7, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         tip_e.grid(row=7, column=1, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         on_quit_combobox.grid(row=7, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        tip_f.grid(row=8, column=1, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        update_combobox.grid(row=8, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
         ok_button.grid(row=30, column=0, columnspan=10, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        mode_box.grid(row=29, column=0, columnspan=10, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         upgrade_bw_box()
 
     def gui_style(self):
@@ -1602,6 +1641,9 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
         senior_setting_menu.add_command(label=self.KEY_BOARD["terminated_sync"][2],
                                         command=self.KEY_BOARD["terminated_sync"][3],
                                         accelerator=self.KEY_BOARD["terminated_sync"][1])
+        senior_setting_menu.add_command(label=self.KEY_BOARD["check_for_fakeupdate"][2],
+                                        command=self.KEY_BOARD["check_for_fakeupdate"][3],
+                                        accelerator=self.KEY_BOARD["check_for_fakeupdate"][1])
         senior_setting_menu.add_command(label="Upgrade Config",
                                         command=lambda: self.upgrade_config())
         senior_setting_menu.add_command(label="Extract Config",
@@ -1673,6 +1715,9 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
                               accelerator=self.KEY_BOARD["minify"][1])
         help_menu.add_command(label=self.KEY_BOARD["help"][2], command=self.KEY_BOARD["help"][3],
                               accelerator=self.KEY_BOARD["help"][1])
+        help_menu.add_command(label=self.KEY_BOARD["check_for_update"][2],
+                              command=self.KEY_BOARD["check_for_update"][3],
+                              accelerator=self.KEY_BOARD["check_for_update"][1])
         help_menu.add_separator()
         help_menu.add_cascade(label="百宝箱", menu=treasure_menu, activebackground=choice(self.COLOR),
                               foreground=choice(self.COLOR))

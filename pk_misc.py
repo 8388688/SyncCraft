@@ -2,8 +2,8 @@ import sys
 import tkinter as tk
 from ctypes import windll
 from http.client import RemoteDisconnected
-from os import rename, unlink
-from os.path import abspath, exists
+from os import rename, unlink, getenv
+from os.path import abspath, exists, join
 from time import time, localtime, strftime, strptime, mktime
 from tkinter import ttk
 from tkinter.constants import *
@@ -23,6 +23,9 @@ __version__ = "1.8"
 build_time = 1737648000
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
+global_settings_dirp = join(getenv("APPDATA"), TITLE)
+st.safe_md(global_settings_dirp, quiet=True)
+global_settings_fp = join(global_settings_dirp, "globalsettings.sc_json")
 
 """
 def get_freespace_ctypes(folder):
@@ -100,7 +103,7 @@ def topmost_st(name, top, focus=True):
         return False
 
 
-def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print):
+def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print, buildTime=build_time):
     def update_api():
         nonlocal size, chunk_size, start_t, content_size
         down_btn.config(state=DISABLED)
@@ -123,7 +126,7 @@ def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print):
             record_fx("ConnectionError")
         else:
             if url is None:
-                webbopen("https://github.com/8388688/SyncCraft")
+                webbopen("https://github.com/8388688/SyncCraft/releases")
                 return -2
             elif url:
                 req = get(url, stream=True)  # 这里需要对 url 更新
@@ -152,7 +155,7 @@ def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print):
                 rename(get_exec(), exec_bak)
                 rename(get_exec() + ".tmp", get_exec())
             else:
-                print("下载错误！", response.status_code)
+                record_fx("下载错误！", response.status_code)
             dl_bar.forget()
             msgbox.showinfo("更新完成", "更新完成，用时%.1fs\n请重启 %s" % (time() - start_t, TITLE), parent=root)
 
@@ -175,14 +178,15 @@ def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print):
     # current_date = mktime(strptime("", "%Y-%m-%d"))
     tmp = ""
     for i in up_content.keys():
-        if up_content[i]["build_time"] > build_time:
+        if up_content[i]["build_time"] > buildTime:
             updatable = i
-            print(333333)
+            buildTime = up_content[i]["build_time"]
             # current_date = response_json[i]["date"]
             tmp = f"更新内容：\n{up_content[i]["content"]}"
 
     if updatable == __version__:
         record_fx("暂无更新")
+        msgbox.showinfo("检查更新", "暂无更新")
     else:
         root = tk.Toplevel(win)
         up_content_text = tk.Text(root, width=60, height=18, undo=False, bd=3)
@@ -198,6 +202,7 @@ def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print):
         down_btn.grid(row=4, column=0, padx=10, pady=5)
         tk.Button(root, width=10, text="Cancel", command=root.destroy).grid(row=4, column=2, padx=10, pady=5)
         up_content_text.insert(END, tmp)
+        up_content_text.config(state=DISABLED)
         root.update()
 
 
