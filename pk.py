@@ -6,7 +6,7 @@ import win32security
 import ntsecuritycon
 from builtins import open as fopen
 from json import loads, dumps
-from time import time, localtime, strftime, sleep
+from time import time, localtime, strftime, sleep, time_ns
 from os import rename, system, remove, rmdir, getenv, listdir, listmounts, listvolumes
 from os.path import exists, join, isfile, isdir, realpath, abspath, dirname
 from psutil import disk_partitions
@@ -37,6 +37,11 @@ class Peeker:  # TODO: 参考“点名器.py”
     CUR = "cursor"
     REP = "replacement"
     DEVICE = "device"
+
+    LOG_INFO = "info"
+    LOG_WARNING = "warning"
+    LOG_ERROR = "error"
+    LOG_DEBUG = "debug"
 
     ATTR_READ_ONLY = 1
     ATTR_HIDDEN = 2
@@ -89,7 +94,6 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.reserved_size = 0
         self.wait_busy_loop = None
         self.profileSettings = {}
-        self.warnings = {}
         # 下面这一行才是真正的赋值
         # self.extract_config() <-- 已移入 setup() 函数中
 
@@ -234,15 +238,15 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.exclude_in_del = (self.log_dirp, self.conf_fp) + tuple(self.synced_archives)
         self.record_fx(f"更新排除文件列表 {self.exclude_in_del}")
 
-    def record_ln(self, *__text, sep=" ", end="\n", local_log=None, global_log=None):
+    def record_ln(self, *__text, sep=" ", end="\n", local_log=None, global_log=None, tag=LOG_INFO):
         tmp = sep.join(map(str, __text)) + end
         now_time = get_time()
         if (local_log is None and self.log_fiet_live) or local_log:
-            self.log_fiet.write(f"[{now_time}]" + tmp)
+            self.log_fiet.write(f"[{now_time}]{tag}: " + tmp)
         # self.log_fiet.flush()
         if (global_log is None and self.gs_log_fiet_live) or global_log:
-            self.gs_log_fiet.write(f"[{now_time} | {self.SYNC_ROOT_FP}]" + tmp)
-        print(f"[{now_time}]" + tmp, sep="", end="")
+            self.gs_log_fiet.write(f"[{now_time} | {self.SYNC_ROOT_FP}]{tag}: " + tmp)
+        print(f"[{now_time}]{tag}: " + tmp, sep="", end="")
 
     def setup(self):
         self.gs_log_fiet = open(self.gs_log_fp, "a", encoding="utf-8")
@@ -261,7 +265,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         if __version__ == tmp_ver:
             pass
         else:
-            self.record_fx(f"WARNING: 运行版本不一致 {__version__} ≠ {tmp_ver}")
+            self.record_fx(f"WARNING: 运行版本不一致 {__version__} ≠ {tmp_ver}", tag=self.LOG_WARNING)
 
         self.get_admin()
 
@@ -289,7 +293,7 @@ class Peeker:  # TODO: 参考“点名器.py”
             return True
         else:
             if not quiet:
-                self.record_fx(f"WARNING: 尝试使用管理员权限运行 :(")
+                self.record_fx(f"WARNING: 尝试使用管理员权限运行 :(", tag=self.LOG_WARNING)
             if take:
                 suffix = self.execute_fp.replace("/", "\\").split("\\")[-1].split(".")[-1]
                 self.record_fx(f"准备以管理员身份重启. . . . . . {sys_executable=}, {self.execute_fp=}, {suffix=}")
@@ -432,7 +436,7 @@ class Peeker:  # TODO: 参考“点名器.py”
                         dacl.DeleteAce(0)
                     dacl.AddAccessAllowedAceEx(acl_revision, flag, permission, userx_sid)
             else:
-                self.record_fx(f"WARNING: {fname} 所在驱动器似乎不支持 NTFS 安全权限")
+                self.record_fx(f"WARNING: {fname} 所在驱动器似乎不支持 NTFS 安全权限", tag=self.LOG_WARNING)
 
             sd.SetSecurityDescriptorDacl(1, dacl, 0)
             win32security.SetNamedSecurityInfo(fname, win32security.SE_FILE_OBJECT,

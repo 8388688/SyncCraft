@@ -19,7 +19,7 @@ from requests.exceptions import ConnectTimeout
 from win32com import client
 from webbrowser import open as webbopen
 
-__version__ = "1.8"
+__version__ = "1.8.1"
 build_time = 1737648000
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
@@ -103,13 +103,16 @@ def topmost_st(name, top, focus=True):
         return False
 
 
-def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print, buildTime=build_time):
+def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print, up_data=(__version__, build_time), silent=False):
     def update_api():
-        nonlocal size, chunk_size, start_t, content_size
-        down_btn.config(state=DISABLED)
-        dl_bar.grid(row=3, column=0, columnspan=3, padx=10, pady=5)
-        dl_bar.start()
-        root.update()
+        nonlocal size, chunk_size, start_t, content_size, silent, tmp
+        if not silent:
+            down_btn.config(state=DISABLED)
+            dl_bar.grid(row=3, column=0, columnspan=3, padx=10, pady=5)
+            dl_bar.start()
+            root.update()
+        else:
+            record_fx("准备下载")
         try:
             url = up_content[updatable].get("url", None)
         except ConnectionRefusedError:
@@ -126,7 +129,8 @@ def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print, buildTime=build_time):
             record_fx("ConnectionError")
         else:
             if url is None:
-                webbopen("https://github.com/8388688/SyncCraft/releases")
+                if not silent:
+                    webbopen("https://github.com/8388688/SyncCraft/releases")
                 return -2
             elif url:
                 req = get(url, stream=True)  # 这里需要对 url 更新
@@ -135,19 +139,26 @@ def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print, buildTime=build_time):
                           stream=True)
             content_size = int(req.headers.get("content-length", -1))
             if req.status_code == 200 and content_size != -1:
-                dl_bar.stop()
-                dl_bar.config(mode="determinate", maximum=content_size)
+                if not silent:
+                    dl_bar.stop()
+                    dl_bar.config(mode="determinate", maximum=content_size)
 
                 with open(get_exec() + ".tmp", "wb") as package:
+                    count_ch = 0
                     for chunk in req.iter_content(chunk_size=chunk_size):
+                        count_ch += 1
                         package.write(chunk)
                         size += len(chunk)
-                        dl_bar.config(value=size)
-                        label.config(
-                            text=f"已下载 {st.scientific_notate(size, custom_seq=rate_list, rate=1024)}/"
-                                 f"{st.scientific_notate(content_size, custom_seq=rate_list, rate=1024)}")
-                        root.update()
-                        # root.update_idletasks()
+                        tmp = (f"已下载 {st.scientific_notate(size, custom_seq=rate_list, rate=1024)}/"
+                               f"{st.scientific_notate(content_size, custom_seq=rate_list, rate=1024)}")
+                        if not silent:
+                            dl_bar.config(value=size)
+                            label.config(text=tmp)
+                            root.update()
+                            # root.update_idletasks()
+                        else:
+                            if count_ch % 10 == 0:
+                                record_fx(tmp)
 
                 exec_bak = get_exec() + ".old"
                 if exists(exec_bak):
@@ -156,8 +167,12 @@ def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print, buildTime=build_time):
                 rename(get_exec() + ".tmp", get_exec())
             else:
                 record_fx("下载错误！", response.status_code)
-            dl_bar.forget()
-            msgbox.showinfo("更新完成", "更新完成，用时%.1fs\n请重启 %s" % (time() - start_t, TITLE), parent=root)
+            tmp = "更新完成，用时%.1fs\n请重启 %s" % (time() - start_t, TITLE)
+            if not silent:
+                dl_bar.forget()
+                msgbox.showinfo("更新完成", tmp, parent=root)
+            else:
+                record_fx(tmp)
 
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, '
@@ -173,10 +188,11 @@ def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print, buildTime=build_time):
     start_t = time()
     chunk_size = 8192  # 每次下载的数据大小
     content_size = int(response.headers.get("content-length", -1))
-    updatable = __version__
+    updatable = up_data[0]
 
     # current_date = mktime(strptime("", "%Y-%m-%d"))
     tmp = ""
+    buildTime = up_data[1]
     for i in up_content.keys():
         if up_content[i]["build_time"] > buildTime:
             updatable = i
@@ -184,26 +200,31 @@ def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print, buildTime=build_time):
             # current_date = response_json[i]["date"]
             tmp = f"更新内容：\n{up_content[i]["content"]}"
 
-    if updatable == __version__:
+    if updatable == up_data[0]:
         record_fx("暂无更新")
-        msgbox.showinfo("检查更新", "暂无更新")
+        if not silent:
+            msgbox.showinfo("检查更新", "暂无更新")
     else:
-        root = tk.Toplevel(win)
-        up_content_text = tk.Text(root, width=60, height=18, undo=False, bd=3)
-        up_content_text.grid(row=1, column=0, columnspan=3, padx=10, pady=5)
-        tk.Label(root, text=f"{TITLE} 有新的更新！", bd=3, relief=GROOVE, width=60, height=1).grid(
-            row=0, column=0, columnspan=3, padx=10, pady=10)
-        dl_bar = ttk.Progressbar(root, length=400, cursor="spider", mode="indeterminate", maximum=content_size)
-        tk.Label(root, text=f"正在将 {TITLE} 从 {__version__} 更新至 {updatable} 版本").grid(
-            row=2, column=0, columnspan=2, padx=10, pady=5)
-        label = tk.Label(root, text="")
-        label.grid(row=2, column=2, padx=10, pady=5)
-        down_btn = tk.Button(root, width=10, text="Download!", command=update_api)
-        down_btn.grid(row=4, column=0, padx=10, pady=5)
-        tk.Button(root, width=10, text="Cancel", command=root.destroy).grid(row=4, column=2, padx=10, pady=5)
-        up_content_text.insert(END, tmp)
-        up_content_text.config(state=DISABLED)
-        root.update()
+        if not silent:
+            root = tk.Toplevel(win)
+            up_content_text = tk.Text(root, width=60, height=18, undo=False, bd=3)
+            up_content_text.grid(row=1, column=0, columnspan=3, padx=10, pady=5)
+            tk.Label(root, text=f"{TITLE} 有新的更新！", bd=3, relief=GROOVE, width=60, height=1).grid(
+                row=0, column=0, columnspan=3, padx=10, pady=10)
+            dl_bar = ttk.Progressbar(root, length=400, cursor="spider", mode="indeterminate", maximum=content_size)
+            tk.Label(root, text=f"正在将 {TITLE} 从 {__version__} 更新至 {updatable} 版本").grid(
+                row=2, column=0, columnspan=2, padx=10, pady=5)
+            label = tk.Label(root, text="")
+            label.grid(row=2, column=2, padx=10, pady=5)
+            down_btn = tk.Button(root, width=10, text="Download!", command=update_api)
+            down_btn.grid(row=4, column=0, padx=10, pady=5)
+            tk.Button(root, width=10, text="Cancel", command=root.destroy).grid(row=4, column=2, padx=10, pady=5)
+            up_content_text.insert(END, tmp)
+            up_content_text.config(state=DISABLED)
+            root.update()
+        else:
+            record_fx(f"正在将 {TITLE} 从 {__version__} 更新至 {updatable} 版本")
+            update_api()
 
 
 help_text = {

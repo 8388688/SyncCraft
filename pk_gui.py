@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import re
 import threading
 import tkinter as tk
 from getpass import getuser
@@ -105,6 +106,13 @@ class PeekerGui(pk.Peeker, Treasure):
     ERROR_FP = "assets/SecurityAndMaintenance_Error_Resize.png"
     INFO_FP = "assets/SecurityAndMaintenance_Resize.png"
     QUESTION_FP = "assets/grequest.gif"
+    LOG_COLORS = {
+        pk.Peeker.LOG_INFO: "black",
+        pk.Peeker.LOG_WARNING: "#CCCC00",
+        pk.Peeker.LOG_ERROR: "red",
+        pk.Peeker.LOG_DEBUG: "green"
+    }
+
     debug = False
     COLOR = ("red", "yellow", "green", "blue", "black", "brown", "white", "orange", "purple", "pink")
     TODAY_QUOTE = (
@@ -166,6 +174,7 @@ class PeekerGui(pk.Peeker, Treasure):
 
         self.log_list = []
         self.user_history = {}
+        self.warnings = {}
         self.topmost = tk.BooleanVar()
         self.take_focus = tk.BooleanVar()
         self.show_terminal_warning = tk.BooleanVar()
@@ -176,14 +185,11 @@ class PeekerGui(pk.Peeker, Treasure):
         self.theme = tk.StringVar()
         self.disabledWhenSubWindow = tk.BooleanVar()
         self.OnQuit = tk.IntVar()  # 0 = 询问，1 = 最小化到托盘，2 = 退出
-        self.gui_live = True
+        self.truncateTooLongStrings = tk.StringVar()
 
         self.KEY_BOARD = {
             "run": ("<Control-r>", "Ctrl+R", "运行", lambda x=None: self.gui_run()),
-            "add_dir": ("<Control-n>", "Ctrl+N", "添加同步的文件夹", lambda x=None: self.gui_add()),
-            "del_dir": ("<Control-d>", "Ctrl+D", "删除同步的文件夹", lambda x=None: self.gui_del()),
-            "settings": ("<Control-,>", "Ctrl+,", "基础设置", lambda x=None: self.gui_settings()),
-            "refresh": ("<KeyRelease-F5>", "F5", "刷新", lambda x=None: self.refresh()),
+            "refresh": ("<F5>", "F5", "刷新", lambda x=None: self.refresh()),
             "terminate": ("<Control-Alt-F2>", "Ctrl+Alt+F2", "强行终止", lambda x=None: self.join_cmdline(
                 lambda: self.destroy(), lambda: pk.sys_exit(-1))),
             "exit": ("<Control-F4>", "Ctrl+F4", "放弃保存并退出", lambda x=None: self.gui_destroy(True, save=False)),
@@ -191,14 +197,15 @@ class PeekerGui(pk.Peeker, Treasure):
             "check_admin": (
                 "<Alt-c>", "Alt+C", "检查管理员权限", lambda x=None: self.gui_get_admin(take=False, quiet=False)),
             "take_admin": (
-                "<Alt-s>", "Alt+S", "以管理员身份运行", lambda x=None: self.gui_get_admin(take=True, quiet=False)),
+                "<Alt-KeyRelease-s>", "Alt+S", "以管理员身份运行",
+                lambda x=None: self.gui_get_admin(take=True, quiet=False)),
             "save": ("<Control-s>", "Ctrl+S", "保存", lambda x=None: self.save(ren=False)),
             "save_arc": ("<Control-Shift-S>", "Ctrl+Shift+S", "保存 & 归档", lambda x=None: self.save(ren=True)),
             "help": ("<F1>", "F1", "获取帮助", lambda x=None: self.gui_help("initial")),
             "check_for_update": (
                 "<Control-KeyRelease-U>", "Ctrl+U", "检查更新", lambda x=None: update_sc(self, self.record_fx)),
             "check_for_fakeupdate": ("<Triple-Control-KeyRelease-u>", "Ctrl+U+U+U", "伪装旧版本以触发更新",
-                                     lambda x=None: update_sc(self, self.record_fx, 0)),
+                                     lambda x=None: update_sc(self, self.record_fx, up_data=("X.X.X.X", 0))),
             "read_arc": ("<Alt-r>", "Alt+R", "检查存档",
                          lambda x=None: self.gui_unlock(unlock_pre=False, del_=False, untie=True, read=True)),
             "unlock_arc_r": ("<Alt-Shift-R>", "Alt+Shift+R", "解锁存档并查看",
@@ -215,16 +222,18 @@ class PeekerGui(pk.Peeker, Treasure):
                           lambda x=None: self.gui_unlock(unlock_pre=False, del_=False, untie=False, read=False)),
             "untieall_arc": ("<Alt-Shift-L>", "Alt+Shift+L", "解除所有存档的关联",
                              lambda x=None: self.unlockall_cur(unlock_pre=False, delete=False, untie=False)),
-            "minify": ("<Alt-n>", "Alt+N", "最小化窗口", lambda x=None: self.iconify()),
+            "minify": ("<Alt-KeyRelease-n>", "Alt+N", "最小化窗口", lambda x=None: self.iconify()),
+            "hide_gui": ("<Alt-KeyRelease-h>", "Alt+H", "最小化到系统托盘", lambda x=None: self.withdraw()),
             # "maxify": ("<Alt-m>", "Alt+M", "还原窗口", lambda x=None: self.deiconify()),
-            "preset0": ("<Alt-1>", "Alt+1", "预设：forever", lambda x=None: self.warn_nowindow(True, False)),
-            "preset1": ("<Alt-2>", "Alt+2", "预设：3600times", lambda x=None: self.warn_nowindow(
+            "preset0": ("<Alt-KeyRelease-1>", "Alt+1", "预设：forever", lambda x=None: self.warn_nowindow(True, False)),
+            "preset1": ("<Alt-KeyRelease-2>", "Alt+2", "预设：3600times", lambda x=None: self.warn_nowindow(
                 True, False, figure=3600)),
             "shut": ("<Shift-Q>", "Shift+Q", "清除同步状态", lambda x=None: self.shut()),
             "terminated_sync": ("<Control-l>", "Ctrl+L", "终止正在进行的同步", lambda x=None: self.terminate_sync()),
             "reset_warnings": ("<Control-KeyRelease-2>", "Ctrl+2", "重置所有警告", lambda x=None: self.gui_clear_list(
                 self.warnings, "重置所有警告. . . 完成！")),
         }
+        self.gui_live = True
 
         # 以下的赋值并不重要，具体可参考 Peeker 的  __init__ 函数末尾和 extract_config() 函数
         # null
@@ -243,8 +252,11 @@ class PeekerGui(pk.Peeker, Treasure):
         self.protocol("WM_DELETE_WINDOW", lambda: self.gui_destroy(None, slide=True, save=True))
         self.attributes("-topmost", self.topmost.get())
 
-        self.log_box = tk.Listbox(self, width=40, height=20, takefocus=False, selectmode=BROWSE,
-                                  fg=self.log_box_color)
+        self.logBox_Listbox = tk.Listbox(self, width=40, height=20, takefocus=False, selectmode=BROWSE,
+                                         fg=self.log_box_color)
+        self.logBox_Text = tk.Text(self, width=40, height=27, takefocus=False, fg=self.log_box_color, wrap=NONE)
+        self.log_box = self.logBox_Text
+
         self.log_scroll_Y = ttk.Scrollbar(self, command=self.log_box.yview, orient=VERTICAL, takefocus=False)
         self.log_scroll_X = ttk.Scrollbar(self, command=self.log_box.xview, orient=HORIZONTAL, takefocus=False)
         self.sync_box = tk.Listbox(self, width=35, height=11, takefocus=True, selectmode=BROWSE,
@@ -281,26 +293,23 @@ class PeekerGui(pk.Peeker, Treasure):
 
     def setup(self):
         super().setup()
-        self.record_fx(f"接收参数 {argv}")
-        self.record_fx(f"窗口定位 {get_center(self)}")
-        self.topmost_tm(self.TITLE, None, True)
+        self.record_fx("接收参数", argv)
+        self.record_fx("窗口定位", get_center(self))
+        self.topmost_tm(self, None, True)
+        self.record_fx("已装载", len(self.global_style.theme_names()), "个主题")
         self.record_fx(", ".join(self.global_style.theme_names()))
-        self.record_fx(f"已装载 {len(self.global_style.theme_names())} 个主题")
         self.global_style.theme_use(self.theme.get() if self.theme.get() else "vista")
 
-    def record_register(self, *text, sep=" ", end="\n"):
+    def record_register_old(self, *text, sep=" ", end="\n"):
+        """DEPRECATED"""
         self.record_ln(*text, sep=sep, end=end)
         text_1 = f"[{pk.strftime('%H:%M:%S', pk.localtime(pk.time()))}]{sep.join(map(str, text))}"
         self.log_list.append(text_1)
         try:
             if self.gui_live:
                 self.log_box.insert(self.log_insert_mode.get(), text_1)
-                # self.log_box.bindtags()
                 if self.log_scroll2end.get():
-                    # self.log_box.select_clear(0, END)
-                    # self.log_box.select_set(END)
                     self.log_box.see(self.log_insert_mode.get())
-                    # self.log_scroll_Y.set(self.log_box["width"] / 2 / self.log_box.size(), 1.0)
         except AttributeError:
             print(f"AttributeError!    {text_1}")
             print(format_exc())
@@ -309,18 +318,57 @@ class PeekerGui(pk.Peeker, Treasure):
             print(format_exc())
         self.log_box.update()
 
+    def record_register(self, *text, sep=" ", end="\n", tag=pk.Peeker.LOG_INFO):
+        self.record_ln(*text, sep=sep, end=end, tag=tag)
+        tmp_text = (
+            "[" + pk.strftime('%H:%M:%S', pk.localtime(pk.time())) + "]", tag + ": ", sep.join(map(str, text)) + end)
+        text_1 = "".join(tmp_text)
+        try:
+            self.log_box.see(self.log_insert_mode.get())
+        except AttributeError:
+            print(f"AttributeError!    {text_1}")
+            # print(format_exc())
+        except tk.TclError:
+            print(f"TclError!    {text_1}")
+            # print(format_exc())
+        else:
+            if self.gui_live:
+                self.log_box.config(state=NORMAL)
+                self.log_list.append(text_1)
+                self.log_box.insert(self.log_insert_mode.get(), text_1)
+                tmp_tag = str(pk.time_ns())
+                self.log_box.tag_add(
+                    tmp_tag, str(len(self.log_list)) + ".0", str(len(self.log_list)) + ".0 lineend")
+                self.log_box.tag_config(tmp_tag, foreground=self.LOG_COLORS.get(tag, ""))
+                if self.log_scroll2end.get():
+                    self.log_box.see(self.log_insert_mode.get())
+                self.log_box.config(state=DISABLED)
+            self.log_box.update()
+
     def refresh(self):
         self.record_fx(
             f"置顶: {self.topmost.get()}，超级置顶: {self.take_focus.get()}，日志自动滚屏: {self.log_scroll2end.get()}")
         if self.take_focus.get():
             self.topmost.set(True)
-            self.bind("<FocusOut>", lambda x: self.topmost_tm(self.TITLE, self.topmost.get(), self.take_focus.get()))
+            self.bind("<FocusOut>", lambda x: self.topmost_tm(self, self.topmost.get(), self.take_focus.get()))
         else:
             self.unbind("<FocusOut>")
         self.attributes("-topmost", self.topmost.get())
-        self.log_box.delete(0, END)
-        for i in self.log_list:
-            self.log_box.insert(self.log_insert_mode.get(), i)
+        self.log_box.config(state=NORMAL, wrap=self.truncateTooLongStrings.get())
+        for tmp in self.log_box.tag_names():
+            self.log_box.tag_remove(tmp, "1.0", END)
+        self.log_box.delete(1.0, END)
+        for i in range(len(self.log_list)):
+            self.log_box.insert(self.log_insert_mode.get(), self.log_list[i])
+            # tmp = re.match(r"(\[\d{4}-\d{2}-\d{2}T\d{2}\.\d{2}\.\d{2}Z])(\b(info|warning|error)\b): ", i)
+            # 此为 [xxxx-xx-xxTxx.xx.xxZ] 格式，是控制台输出的格式
+            tmp = re.match(r"(\[\d{2}:\d{2}:\d{2}])(\b(%s)\b): " % "|".join(self.LOG_COLORS.keys()), self.log_list[i])
+            # 此为 log_box 输出的格式
+            if tmp is not None:
+                tmp_tag = tmp.group(1) + str(i)
+                self.log_box.tag_add(tmp_tag, str(i + 1) + ".0", str(i + 1) + ".0" + " lineend")
+                self.log_box.tag_config(tmp_tag, foreground=self.LOG_COLORS.get(tmp.group(2), ""))
+        self.log_box.config(state=DISABLED)
         self.sync_box.delete(0, END)
         for i in self.cursors.keys():
             type_ = self.cursors[i].get("type", "Unknown")
@@ -340,13 +388,17 @@ class PeekerGui(pk.Peeker, Treasure):
 
     def topmost_tm(self, name, top, focus):
         self.record_fx(f"调用 {self.topmost_tm.__name__} 函数：{name=}, {top=}, {focus=}")
-        topmost_st(name, top, focus)
+        # topmost_st(name, top, focus)
+
+        if top is not None:
+            name.attributes("-topmost", top)
+        if focus:
+            name.deiconify()
 
     def upgrade_config(self):
         super().upgrade_config()
         self.userdata.update({
             "log_scroll2end": self.log_scroll2end.get(),
-            "show_terminal_warning": self.show_terminal_warning.get(),
             "take_focus": self.take_focus.get(),
             "topmost": self.topmost.get(),
             "history": self.user_history,
@@ -354,10 +406,11 @@ class PeekerGui(pk.Peeker, Treasure):
             "theme": self.theme.get(),
             "alpha_mode": self.alpha_mode.get(),
             "disabledWhenSubWindow": self.disabledWhenSubWindow.get(),
-
+            "truncateTooLongStrings": self.truncateTooLongStrings.get(),
         })
         self.conf_config.update({"userdata": self.userdata})
         self.warnings.update({
+            "show_terminal_warning": self.show_terminal_warning.get(),
             "OnQuit": self.OnQuit.get()
         })
         self.conf_config.update({"warnings": self.warnings})
@@ -366,7 +419,7 @@ class PeekerGui(pk.Peeker, Treasure):
         super().extract_config()
         self.user_history = self.userdata.get("history", {})
         self.log_scroll2end.set(self.userdata.get("log_scroll2end", False))
-        self.show_terminal_warning.set(self.userdata.get("show_terminal_warning", False))
+        self.show_terminal_warning.set(self.warnings.get("show_terminal_warning", False))
         self.take_focus.set(self.userdata.get("take_focus", False))
         self.topmost.set(self.userdata.get("topmost", False))
         self.log_insert_mode.set(self.userdata.get("log_insert_mode", END))
@@ -375,6 +428,7 @@ class PeekerGui(pk.Peeker, Treasure):
         self.disabledWhenSubWindow.set(self.userdata.get("disabledWhenSubWindow", False))
         self.warnings = self.conf_config.get("warnings", {})
         self.OnQuit.set(self.warnings.get("OnQuit", 0))
+        self.truncateTooLongStrings.set(self.userdata.get("truncateTooLongStrings", False))
 
     def clear_config(self):
         title = f"重置 {self.SYNC_ROOT_FP} 的配置信息"
@@ -419,12 +473,12 @@ class PeekerGui(pk.Peeker, Treasure):
         # cls.attributes("-toolwindow", True)
         cls.attributes("-alpha", self.alpha_mode.get() / 100)
         cls.protocol("WM_DELETE_WINDOW", lambda: self.global_window_destroyed(cls, title, parent))
-        self.topmost_tm(title, self.topmost.get(), True)
+        self.topmost_tm(cls, self.topmost.get(), True)
         if parent is None:
             temp_self = self
         else:
             temp_self = parent
-        temp_self.bind("<FocusIn>", lambda x: self.topmost_tm(title, self.topmost.get(), True))
+        temp_self.bind("<FocusIn>", lambda x: self.topmost_tm(cls, self.topmost.get(), True))
 
         # cls.bind("<Destroy>", lambda x: self.global_window_destroyed(cls, title))
         # 绑定 Destroy 有一个弊端，就是销毁窗口时，该事件会被连续触发约七八次
@@ -445,6 +499,7 @@ class PeekerGui(pk.Peeker, Treasure):
         del cls
         if self.disabledWhenSubWindow.get():
             self.attributes("-disabled", False)
+        self.deiconify()
         self.refresh()
 
     def warn_nowindow(self, destroy_ui=True, fake=False, time_=None, figure=None):
@@ -466,48 +521,6 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
         self.save()
 
     # ---------------------------
-    def template_conf_put(self):
-        local_title = "编辑设置"
-
-        def conf_save():
-            try:
-                self.conf_config = pk.loads(text.get(1.0, END))
-                self.extract_config()
-                # self.upgrade_config()
-            except JSONDecodeError:
-                showinfo(local_title, "json 格式错误！", parent=win)
-            else:
-                showinfo(local_title, "已保存", parent=win)
-                self.global_window_destroyed(win, local_title)
-
-        win = tk.Toplevel(self)
-        self.global_window_initialize(win, title=local_title)
-
-        text = tk.Text(win, width=60, height=18, undo=True, autoseparators=True, wrap=WORD, bd=3, relief=GROOVE)
-        scroll_bar = ttk.Scrollbar(win, command=text.yview)
-        text.config(yscrollcommand=scroll_bar.set)
-
-        text.delete(1.0, END)
-        text.insert(1.0, pk.dumps(self.conf_config))
-        text.grid(row=1, column=0, columnspan=3, sticky=E, padx=1, pady=self.GLOBAL_PADY)
-        scroll_bar.grid(row=1, column=3, sticky=W, ipady=95, padx=1, pady=self.GLOBAL_PADY)
-        tk.Label(win, text=f"更改这些配置可能会使{self.TITLE}停止工作", width=60, height=2,
-                 fg="red", bd=3, relief=GROOVE).grid(  # font=("Arial", 10)
-            row=0, column=0, columnspan=4, padx=self.GLOBAL_PADY, pady=self.GLOBAL_PADY)
-        ttk.Button(win, text="用默认编辑器打开", style=self.BUTTON_STYLE_USE, width=15,
-                   command=lambda: startfile(abspath(self.conf_fp))).grid(
-            row=2, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(win, text="恢复", width=10, style=self.BUTTON_STYLE_USE,
-                   command=lambda: self.join_cmdline(
-                       lambda: text.delete(1.0, END),
-                       lambda: text.insert(1.0, pk.dumps(self.conf_config)))).grid(
-            row=2, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        # ttk.Button(win, text="退出", width=10, style=self.BUTTON_STYLE_USE,
-        #            command=lambda: self.global_window_destroyed(win, local_title)).grid(
-        #     row=2, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(win, text="保存", width=10, style=self.BUTTON_STYLE_USE, command=conf_save).grid(
-            row=2, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-
     def template_run_command(self, win_: tk.Toplevel, cmd_: tk.Text, fx, each=False, strip=False):
         cmd_get = cmd_.get(1.0, END)
         if each:
@@ -535,15 +548,13 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
         if (show_ter_warning is not None and show_ter_warning) or (
                 show_ter_warning is None and not self.show_terminal_warning.get()):
             showinfo("警告", "本窗口缺少报错和输出显示的功能，因此并不能代替你的 Terminal 终端", icon="warning")
-            showinfo("注意",
-                     "在 Windows 系统中，要打开 Terminal 终端，\n"
-                     "请按下 Win徽标+R 键，在弹出的窗口中输入 cmd，然后回车",
-                     icon="info")
-            showinfo("注意",
-                     "在 Linux 系统中，请按下 Alt+F2 键，\n"
-                     "在弹出的窗口中输入 gnome-terminal，然后回车\n"
-                     "本方法不一定适用于所有的 Linux 发行版",
-                     icon="info")
+            showinfo(
+                "注意", "在 Windows 系统中，要打开 Terminal 终端，\n请按下 Win徽标+R 键，在弹出的窗口中输入 cmd，然后回车",
+                icon="info")
+            showinfo(
+                "注意", "在 Linux 系统中，请按下 Alt+F2 键，\n在弹出的窗口中输入 gnome-terminal，然后回车\n"
+                        "本方法不一定适用于所有的 Linux 发行版",
+                icon="info")
             showinfo("注意", "要不再显示警告，请勾选命令窗口左下角的“不再显示警告”复选框",
                      icon="info")
             if not askokcancel("警告", "你确定要继续吗？"):
@@ -600,6 +611,8 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
                 "msgbox_ch02": prompt_entry.get(),
                 "msgbox_ch03": icon_var.get(),
             })
+            self.record_fx(self.tr_msgbox.__name__, prompt_entry.get(), icon_tup[icon_var.get()][2],
+                           tag=icon_tup[icon_var.get()][2])
             showinfo(title_entry.get(), prompt_entry.get(), icon=icon_tup[icon_var.get()][0], parent=win)
             self.global_window_destroyed(win, local_title)
 
@@ -610,10 +623,12 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
 
         win = tk.Toplevel()
         self.global_window_initialize(win, title=local_title)
-        icon_tup = {"显示": ("info", tk.PhotoImage(file=self.INFO_FP)),
-                    "警告": ("warning", tk.PhotoImage(file=self.WARNING_FP)),
-                    "错误": ("error", tk.PhotoImage(file=self.ERROR_FP)),
-                    "询问": ("question", tk.PhotoImage(file=self.QUESTION_FP))}
+        icon_tup = {
+            "显示": ("info", tk.PhotoImage(file=self.INFO_FP), self.LOG_INFO),
+            "警告": ("warning", tk.PhotoImage(file=self.WARNING_FP), self.LOG_WARNING),
+            "错误": ("error", tk.PhotoImage(file=self.ERROR_FP), self.LOG_ERROR),
+            "询问": ("question", tk.PhotoImage(file=self.QUESTION_FP), self.LOG_INFO),
+        }
         icon_var = tk.StringVar()
         icon_var.set(self.user_history.get("msgbox_ch03", tuple(icon_tup.keys())[0]))
 
@@ -727,98 +742,6 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
         pass
 
     # ---------------------------
-    def gui_add(self):
-        local_title = "添加"
-        reflecting = {"固定分配": self.SOL, "游标同步": self.CUR, "替换": self.REP, "驱动器的增强同步": self.DEVICE}
-
-        def api_add():
-            src_ = src_ui.get()
-            dst_ = (dst_ui.get() if isabs(dst_ui.get()) else pk.join(self.SYNC_ROOT_FP, dst_ui.get()))
-            # if label_var.get() == "solid":
-            #     self.solids.append([src_, dst_])
-            # else:
-            #     self.cursors.append([src_, dst_])
-            self.cursors.update(
-                {src_: {"dst": dst_, "type": reflecting[label_var.get()], "lastrun": "", "archives": []}})
-            self.update_cursor()
-            showinfo("添加同步目录", f"{src_} <===> {dst_}\n已成功添加", parent=win)
-            src_ui.delete(0, END)
-            dst_ui.delete(0, END)
-            self.global_window_destroyed(win, local_title)
-            self.refresh()
-
-        win = tk.Toplevel(self)
-        self.global_window_initialize(win, local_title)
-        # win.wm_minsize(600, 400)
-        label_var = tk.StringVar()
-        label_var.set(list(reflecting.keys())[0])
-
-        src_ui = ttk.Entry(win)
-        dst_ui = ttk.Entry(win)
-        cursor_btn = ttk.Combobox(win, values=list(reflecting.keys()), textvariable=label_var, state="readonly")
-
-        tk.Label(win, text="source:").grid(row=0, column=0, padx=self.GLOBAL_PADX,
-                                           pady=self.GLOBAL_PADY)
-        tk.Label(win, text="destination:").grid(
-            row=1, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(win, text="ok.", style=self.BUTTON_STYLE_USE, width=10, command=api_add).grid(
-            row=2, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        src_ui.grid(row=0, column=1, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        dst_ui.grid(row=1, column=1, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        cursor_btn.grid(row=2, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-
-    def gui_del(self):
-        width = 60
-
-        def api_del():
-            """
-            eaten = self.cursors.keys()
-            for index in eaten:
-                if index == del_entry.get():
-                    self.cursors.pop(index)
-                    self.record_fx(f"删除{index}")
-                    showinfo("删除", f"{index} 已被删除", parent=win)
-            self.record_fx("同步的文件夹已更新")
-            # self.cursors = eaten
-            self.update_cursor()
-            refresh0()
-            """
-            self.record_fx(f"删除 {del_entry.get()} <===> {self.cursors.pop(del_entry.get())}")
-            self.update_cursor()
-            refresh0()
-
-        def refresh0():
-            del_entry.config(values=self.get_solid_list() + self.get_cursor_list())
-            solid_listbox.config(state=NORMAL)
-            cursor_listbox.config(state=NORMAL)
-            solid_listbox.delete(0, END)
-            cursor_listbox.delete(0, END)
-            for i in self.get_solid_list():
-                solid_listbox.insert(END, i)
-            for i in self.get_cursor_list():
-                cursor_listbox.insert(END, i)
-            solid_listbox.config(state=DISABLED)
-            cursor_listbox.config(state=DISABLED)
-            self.refresh()
-
-        win = tk.Toplevel(self)
-        self.global_window_initialize(win, title="删除")
-        # win.wm_minsize(600, 400)
-        del_entry = tk.Spinbox(win, fg="green", state="readonly", values=self.get_cursor_list(), width=width, wrap=True)
-        solid_listbox = tk.Listbox(win, width=width // 2, takefocus=False, state=DISABLED)
-        cursor_listbox = tk.Listbox(win, width=width // 2, takefocus=False, state=DISABLED)
-
-        del_entry.insert(0, "输入【编号】，此文本框没有防误操作的机制")
-        refresh0()
-
-        del_entry.grid(row=0, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        solid_listbox.grid(row=2, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        cursor_listbox.grid(row=2, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        tk.Label(win, text="固定分配").grid(row=1, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        tk.Label(win, text="游标同步").grid(row=1, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(win, text="Delete!", style=self.BUTTON_STYLE_USE, command=api_del, width=width).grid(
-            row=3, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-
     def gui_destroy(self, destroy2=None, slide=False, save=True):
         self.record_fx(f"{self.gui_destroy.__name__} 销毁窗口")
         if destroy2 is None:
@@ -1309,180 +1232,6 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
         self.upgrade_config()
         self.record_fx(text)
 
-    def gui_settings(self):
-        def get_log(x, base) -> tuple[int, int]:
-            ret = 0
-            x_cp = x
-            while x_cp >= base:
-                x_cp //= base
-                ret += 1
-            return x_cp, ret
-
-        def forget_all():
-            misc_frame.grid_forget()
-            view_frame.grid_forget()
-            syncFactor_frame.grid_forget()
-            gs_frame.grid_forget()
-
-        def upgrade_bw_box():
-            bw_list.delete(1.0, END)
-            for j in self.profileSettings.get(bw_list_rainbow[bw_combobox.get()], []):
-                bw_list.insert(END, j + "\n")
-
-        def bw_save_zhuanyong(msg=False):
-            tmp_key = bw_list_rainbow[bw_combobox.get()]
-            tmp_value = bw_list.get(1.0, END).strip("\n").split("\n")
-            self.profileSettings.update({tmp_key: tmp_value})
-            if msg:
-                showinfo("保存", f"已保存 {tmp_key} 的 {len(tmp_value)} 个值", parent=win)
-
-        def save_save():
-            self.reserved_size = int(size_box.get()) * 1024 ** rate_list.index(rate_combobox.get())
-            self.wait_busy_loop = busy_loop_var.get()
-            bw_save_zhuanyong()
-            self.remove_empty_in_bw_list()
-            self.log_insert_mode.set(log_mode_rainbow[log_mode_box.get()])
-            self.OnQuit.set(on_quit_rainbow[on_quit_combobox.get()])
-            #####################################################
-            if pk.exists(pk.global_settings_fp):
-                gs_fiet = open(pk.global_settings_fp, "r", encoding="utf-8")
-                ret = pk.loads(gs_fiet.read())
-            else:
-                gs_fiet = open(pk.global_settings_fp, "w", encoding="utf-8")
-                gs_fiet.write("{}")
-                ret = {}
-            gs_fiet.close()
-            ret.update({"autoUpdate": autoupdate_rainbow[update_combobox.get()]})
-            gs_fiet = open(pk.global_settings_fp, "w", encoding="utf-8")
-            gs_fiet.write(pk.dumps(ret))
-            gs_fiet.close()
-            #####################################################
-            self.upgrade_config()
-            self.global_window_destroyed(win)
-
-        win = tk.Toplevel(self)
-        self.global_window_initialize(win, "实例设置", self)
-
-        view_frame = ttk.Frame(win)
-        syncFactor_frame = ttk.Frame(win)
-        gs_frame = ttk.Frame(win)
-        misc_frame = ttk.Frame(win)
-
-        mode_rainbow = {"视图": view_frame, "同步": syncFactor_frame, "全局设置": gs_frame, "其他": misc_frame}
-        bw_list_rainbow = {
-            "卷标黑名单": "label_blacklist", "卷标白名单": "label_whitelist", "卷 ID 黑名单": "volumeId_blacklist",
-            "卷 ID 白名单": "volumeId_whitelist",
-            "文件列表黑名单": "file_blacklist", "文件列表白名单": "file_whitelist",
-        }
-        log_mode_rainbow = {"顺序输出": END, "倒序输出": "0"}  # 倒序输出理应是整型，但那样就无法装在 StringVar 变量中了
-        on_quit_rainbow = {"每次都询问": 0, "最小化到系统托盘": 1, f"退出 {self.TITLE}": 2}
-        autoupdate_rainbow = {"未配置（每次都询问）": None, "已启用": True, "已禁用": False}
-
-        # win.bind("<KeyRelease-a>", lambda x: view_frame.grid(row=0, column=0))
-        # win.bind("<KeyRelease-b>", lambda x: syncFactor_frame.grid(row=0, column=0))
-        # win.bind("<KeyRelease-c>", lambda x: gs_frame.grid(row=0, column=0))
-        # win.bind("<KeyRelease-d>", lambda x: misc_frame.grid(row=0, column=0))
-
-        tip_a = ttk.Label(syncFactor_frame, text="当硬盘空间小于此数值时，停止同步")
-        # tip_b = ttk.Label(win, text="（时间控制更为精准，但同时也会带来更高的 CPU 负担）")
-        tip_c = ttk.Label(view_frame, text="主题")
-        tip_d = ttk.Label(view_frame, text="窗口透明度")
-        tip_e = ttk.Label(view_frame, text="关闭窗口时")
-        tip_f = ttk.Label(gs_frame, text="启动时检查更新")
-        busy_loop_var = tk.StringVar()
-        # busy_loop_var = tk.BooleanVar()  # BooleanVar() 无法存储 None 值
-        busy_loop_var.set(self.wait_busy_loop)
-        busy_loop_chbtn = ttk.Checkbutton(misc_frame, text="使用 busy_loop 时间等待", variable=busy_loop_var, width=20)
-        size_box = self.get_side2side_entry(
-            syncFactor_frame, ttk.Spinbox, max_=1024, from_=0, to=1024 - 1, width=20, increment=1)
-        rate_combobox = ttk.Combobox(syncFactor_frame, values=rate_list, width=4)
-        style_combobox = ttk.Combobox(view_frame, values=self.global_style.theme_names(), width=20)
-        log_scroll_chbtn = ttk.Checkbutton(view_frame, text="自动滚屏", variable=self.log_scroll2end)
-        bw_list = tk.Text(syncFactor_frame, width=80, height=24, wrap=WORD)
-        bw_combobox = ttk.Combobox(
-            syncFactor_frame, state="readonly", values=tuple(bw_list_rainbow.keys()),
-        )
-        bw_btn = ttk.Button(syncFactor_frame, text="更新", style=self.BUTTON_STYLE_USE,
-                            command=lambda: bw_save_zhuanyong(msg=True))
-        log_mode_label = ttk.Label(view_frame, text="日志输出模式")
-        log_mode_box = ttk.Combobox(view_frame, state="readonly", values=tuple(log_mode_rainbow.keys()))
-        alpha_scale = ttk.Scale(view_frame, from_=10, to=100, variable=self.alpha_mode,
-                                # 为了方便辨认窗口，这里不允许将 -alpha 值由滑杆调整为 0
-                                length=160, command=lambda x: win.attributes("-alpha", float(x) / 100))
-        dis_sub_chbtn = ttk.Checkbutton(misc_frame, text="disabledWhenSubWindow", variable=self.disabledWhenSubWindow,
-                                        state=DISABLED)
-        reset_warning_btn = ttk.Button(view_frame, text=self.KEY_BOARD["reset_warnings"][2],
-                                       style=self.BUTTON_STYLE_USE,
-                                       command=self.KEY_BOARD["reset_warnings"][3])
-        on_quit_combobox = ttk.Combobox(view_frame, state="readonly", values=tuple(on_quit_rainbow.keys()))
-        update_combobox = ttk.Combobox(gs_frame, state="readonly", values=tuple(autoupdate_rainbow.keys()))
-
-        mode_box = ttk.Combobox(win, state="readonly", values=tuple(mode_rainbow.keys()))
-        ok_button = ttk.Button(win, text="ok.", style=self.BUTTON_STYLE_USE, command=save_save)
-
-        size_box.delete(0, END)
-        size_box.insert(0, str(get_log(self.reserved_size, 1024)[0]))
-        rate_combobox.delete(0, END)
-        rate_combobox.insert(0, rate_list[get_log(self.reserved_size, 1024)[1]])
-        rate_combobox.config(state="readonly")
-        busy_loop_chbtn.config()
-        style_combobox.bind("<<ComboboxSelected>>", lambda x: self.api_style(style_combobox.get()))
-        style_combobox.insert(0, self.global_style.theme_use())
-        style_combobox.config(state="readonly")
-        bw_list.delete(1.0, END)
-        bw_list.insert(1.0, "\n".join(self.profileSettings.get("volumeId_blacklist")))
-        bw_combobox.bind("<<ComboboxSelected>>", lambda x: upgrade_bw_box())
-        bw_combobox.set(bw_combobox["values"][0])
-        for i in on_quit_rainbow.keys():
-            if on_quit_rainbow[i] == self.OnQuit.get():
-                on_quit_combobox.set(i)
-        update_combobox.set(update_combobox["values"][0])
-        for i in log_mode_rainbow.keys():
-            if log_mode_rainbow[i] == self.log_insert_mode.get():
-                log_mode_box.set(i)
-
-        mode_box.bind("<<ComboboxSelected>>", lambda x: self.join_cmdline(
-            lambda: forget_all(), lambda: mode_rainbow[mode_box.get()].grid(
-                row=0, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)))
-        mode_box.set(mode_box["values"][0])
-
-        tip_a.grid(row=1, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        # tip_b.grid(row=2, column=1, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        tip_c.grid(row=4, column=1, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        size_box.grid(row=1, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        rate_combobox.grid(row=1, column=2, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        busy_loop_chbtn.grid(row=4, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        style_combobox.grid(row=4, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        log_scroll_chbtn.grid(row=5, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        bw_list.grid(row=2, column=0, columnspan=3, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        bw_combobox.grid(row=3, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        bw_btn.grid(row=3, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        log_mode_label.grid(row=5, column=1, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        log_mode_box.grid(row=5, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        alpha_scale.grid(row=6, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        tip_d.grid(row=6, column=1, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        dis_sub_chbtn.grid(row=6, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        reset_warning_btn.grid(row=7, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        tip_e.grid(row=7, column=1, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        on_quit_combobox.grid(row=7, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        tip_f.grid(row=8, column=1, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        update_combobox.grid(row=8, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-
-        ok_button.grid(row=30, column=0, columnspan=10, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        mode_box.grid(row=29, column=0, columnspan=10, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        upgrade_bw_box()
-
-    def gui_style(self):
-        local_title = "设置主题"
-
-        win = tk.Toplevel()
-        self.global_window_initialize(win, local_title)
-        style_box = ttk.Combobox(win, values=self.global_style.theme_names())
-        style_box.bind("<<ComboboxSelected>>", lambda x: self.api_style(style_box.get()))
-        style_box.insert(0, self.global_style.theme_use())
-        style_box.config(state="readonly")
-        style_box.grid(row=0, column=0, columnspan=3, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-
     def gui_unlock(self, unlock_pre=True, del_=False, untie=True, read=False):
         def api_unlock():
             if sp.size() > 0:
@@ -1515,267 +1264,6 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
         ttk.Button(win, text="立即解锁！", style=self.BUTTON_STYLE_USE, command=api_unlock, width=20).grid(
             row=1, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
-    def gui_menu(self):
-        pass
-
-    def gui_main(self):
-        def topmost_en_de(en_de):
-            view_menu.entryconfig("窗口置顶", state=DISABLED if en_de else NORMAL)
-            view_menu.entryconfig(self.KEY_BOARD["minify"][2], state=DISABLED if en_de else NORMAL)
-            self.refresh()
-
-        def p_popen(__text):
-            ls = popen(__text)
-            ls_read = ls.read()
-            self.record_fx(ls_read)
-            ls.close()
-            win2 = tk.Toplevel(self)
-            self.global_window_initialize(win2, f"执行结果 - {__text}", self)
-            text_box = tk.Text(win2)
-            text_box.insert(1.0, ls_read)
-            text_box.config(state=DISABLED)
-            text_box.pack()
-
-        def export_simplog():
-            ask_ = asksaveasfilename(
-                title="导出日志...", filetypes=(("日志文件", "*.log"), ("所有类型的文件", "*")),
-                initialdir=self.SYNC_ROOT_FP,
-                initialfile=f"日志导出_{pk.strftime('%Y_%m_%d_%H_%M_%S', pk.localtime(pk.time()))}.log")
-            if ask_ is not None and ask_:
-                self.record_fx(f"导出日志. . .")
-                with open(ask_, "w") as file:
-                    file.write("\n".join(self.log_list))
-                showinfo("导出日志文件", f"日志文件已导出为 {ask_}")
-                self.record_fx(f"日志文件已导出为 {ask_}")
-            else:
-                self.record_fx(f"操作已取消")
-
-        def join_useless():
-            self.upgrade_exclude_dir()
-            for j in pk.listdir(self.SYNC_ROOT_FP):
-                tmp_fp = pk.join(self.SYNC_ROOT_FP, j)
-                if pk.isdir(tmp_fp):
-                    if tmp_fp not in self.exclude_in_del:
-                        self.record_fx(f"添加文件夹 - {tmp_fp}")
-                        self.synced_archives.append(tmp_fp)
-                    else:
-                        self.record_fx(f"{tmp_fp} 位于排除列表中，已自动跳过")
-                else:
-                    self.record_fx(f"{tmp_fp} 不是文件夹")
-
-        for i in self.KEY_BOARD.keys():
-            self.bind(self.KEY_BOARD[i][0], self.KEY_BOARD[i][3])
-        self.record_fx(f"绑定 {len(self.KEY_BOARD.keys())} 个热键")
-
-        self.at_admin_var.set(self.get_admin(take=False, quiet=True))
-
-        self.log_box.grid(row=0, column=3, sticky=E, rowspan=100, columnspan=1, padx=0, pady=0)
-        self.log_scroll_X.grid(row=100, column=3, sticky=S, columnspan=1, ipadx=115,
-                               padx=1, pady=0)
-        self.log_scroll_Y.grid(row=0, column=4, sticky=W, rowspan=100, columnspan=1, ipady=155,
-                               padx=0, pady=1)
-        self.sync_box.grid(row=4, column=0, rowspan=3, columnspan=2, sticky=W, padx=1, pady=self.GLOBAL_PADY)
-        self.sync_scroll.grid(row=4, column=1, rowspan=3, columnspan=2, sticky=E, ipady=80, padx=1,
-                              pady=self.GLOBAL_PADY)
-
-        sync_menu = tk.Menu(self.menu_bar, tearoff=False)
-        edit_menu = tk.Menu(self.menu_bar, tearoff=False)
-        tool_menu = tk.Menu(self.menu_bar, tearoff=False)
-        help_menu = tk.Menu(self.menu_bar, tearoff=False)
-        permission_menu = tk.Menu(self.menu_bar, tearoff=False)
-        saving_menu = tk.Menu(self.menu_bar, tearoff=False)
-        arc_menu = tk.Menu(self.menu_bar, tearoff=False)
-        presets_menu = tk.Menu(self.menu_bar, tearoff=False)
-        view_menu = tk.Menu(self.menu_bar, tearoff=False)
-        view_log_menu = tk.Menu(self.menu_bar, tearoff=False)
-        senior_setting_menu = tk.Menu(self.menu_bar, tearoff=False)
-        lab_menu = tk.Menu(self.menu_bar, tearoff=False)
-        treasure_menu = tk.Menu(self.menu_bar, tearoff=True)
-
-        cursor_menu = tk.Menu(self.menu_bar, tearoff=False)
-
-        self.menu_bar.add_cascade(label="同步", menu=sync_menu)
-        self.menu_bar.add_cascade(label="编辑", menu=edit_menu)
-        self.menu_bar.add_cascade(label="工具", menu=tool_menu)
-        self.menu_bar.add_cascade(label="视图", menu=view_menu)
-        self.menu_bar.add_cascade(label="帮助", menu=help_menu)
-
-        sync_menu.add_command(label="打开同步根目录", command=lambda: startfile(self.SYNC_ROOT_FP))
-        sync_menu.add_command(label="打开终端", command=lambda: startfile(environ["COMSPEC"]))
-        sync_menu.add_command(label=self.KEY_BOARD["run"][2], command=self.KEY_BOARD["run"][3],
-                              accelerator=self.KEY_BOARD["run"][1])
-        sync_menu.add_cascade(label="读写", menu=saving_menu)
-        saving_menu.add_command(label=self.KEY_BOARD["save"][2], command=self.KEY_BOARD["save"][3],
-                                accelerator=self.KEY_BOARD["save"][1])
-        saving_menu.add_command(label=self.KEY_BOARD["save_arc"][2], command=self.KEY_BOARD["save_arc"][3],
-                                accelerator=self.KEY_BOARD["save_arc"][1])
-        saving_menu.add_command(label=self.KEY_BOARD["refresh"][2], command=self.KEY_BOARD["refresh"][3],
-                                accelerator=self.KEY_BOARD["refresh"][1])
-        sync_menu.add_cascade(label="存档", menu=arc_menu)
-        sync_menu.add_cascade(label="预设值", menu=presets_menu)
-        presets_menu.add_command(label=self.KEY_BOARD["preset0"][2], command=self.KEY_BOARD["preset0"][3],
-                                 accelerator=self.KEY_BOARD["preset0"][1])
-        presets_menu.add_command(label=self.KEY_BOARD["preset1"][2], command=self.KEY_BOARD["preset1"][3],
-                                 accelerator=self.KEY_BOARD["preset1"][1])
-        sync_menu.add_separator()
-        sync_menu.add_command(label=self.KEY_BOARD["exit"][2], command=self.KEY_BOARD["exit"][3],
-                              accelerator=self.KEY_BOARD["exit"][1])
-        sync_menu.add_command(label=self.KEY_BOARD["save_exit"][2], command=self.KEY_BOARD["save_exit"][3],
-                              accelerator=self.KEY_BOARD["save_exit"][1])
-        sync_menu.add_command(label=self.KEY_BOARD["terminate"][2], foreground="red", activebackground="red",
-                              accelerator=self.KEY_BOARD["terminate"][1], command=self.KEY_BOARD["terminate"][3])
-        tool_menu.add_command(label=self.KEY_BOARD["settings"][2], command=self.KEY_BOARD["settings"][3],
-                              accelerator=self.KEY_BOARD["settings"][1])
-        tool_menu.add_separator()
-        tool_menu.add_command(label="检查已绑定的按键", command=self.gui_key_view)
-        tool_menu.add_command(label="清除历史记录", command=lambda: self.gui_clear_list(
-            self.user_history, "清除历史记录. . . 完成！"))
-        tool_menu.add_command(label=self.KEY_BOARD["reset_warnings"][2], command=self.KEY_BOARD["reset_warnings"][3],
-                              accelerator=self.KEY_BOARD["reset_warnings"][1])
-        tool_menu.add_cascade(label="权限", menu=permission_menu)
-        tool_menu.add_cascade(label="高级设置", menu=senior_setting_menu)
-        senior_setting_menu.bind("<Motion>", lambda x: showinfo(
-            "高级设置", "仅限高级用户", icon="warning"))
-        senior_setting_menu.add_command(label=self.KEY_BOARD["shut"][2], command=self.KEY_BOARD["shut"][3],
-                                        accelerator=self.KEY_BOARD["shut"][1])
-        senior_setting_menu.add_command(label=self.KEY_BOARD["terminated_sync"][2],
-                                        command=self.KEY_BOARD["terminated_sync"][3],
-                                        accelerator=self.KEY_BOARD["terminated_sync"][1])
-        senior_setting_menu.add_command(label=self.KEY_BOARD["check_for_fakeupdate"][2],
-                                        command=self.KEY_BOARD["check_for_fakeupdate"][3],
-                                        accelerator=self.KEY_BOARD["check_for_fakeupdate"][1])
-        senior_setting_menu.add_command(label="Upgrade Config",
-                                        command=lambda: self.upgrade_config())
-        senior_setting_menu.add_command(label="Extract Config",
-                                        command=lambda: self.extract_config())
-        senior_setting_menu.add_command(label="py执行任意命令",
-                                        command=lambda: self.template_sysTerminal(exec, False, strip=True))
-        senior_setting_menu.add_command(label="终端执行任意命令(system)", command=lambda: self.template_sysTerminal(
-            system, True, strip=True))
-        senior_setting_menu.add_command(label="终端执行任意命令(popen)", command=lambda: self.template_sysTerminal(
-            p_popen, True, strip=True))
-        senior_setting_menu.add_cascade(label="额外高级设置", menu=lab_menu)
-        senior_setting_menu.add_command(label="删除此实例", command=self.gui_logout, foreground="red",
-                                        activebackground="red")
-        lab_menu.bind("<Enter>", lambda x: showinfo(
-            "警告", "除非你已经完全明白这些功能的用途，否则请使之保持默认值", icon="warning"))
-        lab_menu.add_command(label="快速锁定该目录[此操作在退出后不可逆]",
-                             command=lambda: self.preserve(self.SYNC_ROOT_FP, True, True),
-                             foreground="red", activebackground="red")
-        lab_menu.add_command(label="解锁该目录",
-                             command=lambda: self.preserve(self.SYNC_ROOT_FP, None, False))
-        lab_menu.add_command(label="编辑配置文件", command=self.template_conf_put)
-        lab_menu.add_command(label="重置当前配置信息", command=self.clear_config)
-        lab_menu.add_command(
-            label="[Extremely]快速删除此实例",
-            command=lambda: self.logout(arc_mode=1, del_log=True, del_conf=True, del_subfile=True),
-            foreground="#AA0000", activebackground="#AA0000")
-        arc_menu.add_command(label=self.KEY_BOARD["read_arc"][2], command=self.KEY_BOARD["read_arc"][3],
-                             accelerator=self.KEY_BOARD["read_arc"][1])
-        arc_menu.add_command(label=self.KEY_BOARD["unlock_arc_r"][2], command=self.KEY_BOARD["unlock_arc_r"][3],
-                             accelerator=self.KEY_BOARD["unlock_arc_r"][1])
-        arc_menu.add_command(label=self.KEY_BOARD["unlock_arc"][2], command=self.KEY_BOARD["unlock_arc"][3],
-                             accelerator=self.KEY_BOARD["unlock_arc"][1])
-        arc_menu.add_command(label=self.KEY_BOARD["delete_arc"][2], command=self.KEY_BOARD["delete_arc"][3],
-                             accelerator=self.KEY_BOARD["delete_arc"][1])
-        arc_menu.add_command(label=self.KEY_BOARD["untie_arc"][2], command=self.KEY_BOARD["untie_arc"][3],
-                             accelerator=self.KEY_BOARD["untie_arc"][1])
-        arc_menu.add_command(label=self.KEY_BOARD["unlockall_arc"][2], command=self.KEY_BOARD["unlockall_arc"][3],
-                             accelerator=self.KEY_BOARD["unlockall_arc"][1])
-        arc_menu.add_command(label=self.KEY_BOARD["deleteall_arc"][2], command=self.KEY_BOARD["deleteall_arc"][3],
-                             accelerator=self.KEY_BOARD["deleteall_arc"][1], activebackground="red", foreground="red")
-        arc_menu.add_command(label=self.KEY_BOARD["untieall_arc"][2], command=self.KEY_BOARD["untieall_arc"][3],
-                             accelerator=self.KEY_BOARD["untieall_arc"][1], activebackground="red", foreground="red")
-        permission_menu.add_command(label=self.KEY_BOARD["check_admin"][2], command=self.KEY_BOARD["check_admin"][3],
-                                    accelerator=self.KEY_BOARD["check_admin"][1])
-        permission_menu.add_checkbutton(label=self.KEY_BOARD["take_admin"][2], command=self.KEY_BOARD["take_admin"][3],
-                                        variable=self.at_admin_var, accelerator=self.KEY_BOARD["take_admin"][1])
-        edit_menu.add_command(label=self.KEY_BOARD["add_dir"][2], command=self.KEY_BOARD["add_dir"][3],
-                              accelerator=self.KEY_BOARD["add_dir"][1])
-        edit_menu.add_command(label=self.KEY_BOARD["del_dir"][2], command=self.KEY_BOARD["del_dir"][3],
-                              accelerator=self.KEY_BOARD["del_dir"][1])
-        edit_menu.add_separator()
-        edit_menu.add_command(label="导入配置文件", command=self.gui_import_conf)
-        edit_menu.add_command(label="导出配置文件", command=self.gui_export_conf)
-        edit_menu.add_separator()
-        edit_menu.add_command(label="附加存档", command=lambda: self.template_sysTerminal(
-            fx=lambda x: self.synced_archives.append(x), each=True, name="附加存档", strip=True,
-            initialvalue="Type the archives you added. One per line. . .", show_ter_warning=False))
-        edit_menu.add_command(label="将根目录下的无关文件加入存档", command=join_useless)
-        edit_menu.add_command(label="移除黑白名单中的空值", command=self.remove_empty_in_bw_list)
-        view_menu.add_cascade(label="日志", menu=view_log_menu)
-        view_log_menu.add_command(label="清空日志", command=lambda: self.join_cmdline(
-            self.log_list.clear, self.refresh))
-        view_log_menu.add_checkbutton(label="自动滚屏", variable=self.log_scroll2end, command=self.refresh)
-        view_menu.add_command(label="主题切换", command=self.gui_style)
-        view_menu.add_checkbutton(label="窗口置顶", variable=self.topmost, command=self.refresh)
-        view_menu.add_checkbutton(label="窗口置顶（超级置顶）", activebackground="navy", foreground="navy",
-                                  variable=self.take_focus, command=lambda: topmost_en_de(self.take_focus.get()))
-        view_menu.add_command(label=self.KEY_BOARD["minify"][2], command=self.KEY_BOARD["minify"][3],
-                              accelerator=self.KEY_BOARD["minify"][1])
-        help_menu.add_command(label=self.KEY_BOARD["help"][2], command=self.KEY_BOARD["help"][3],
-                              accelerator=self.KEY_BOARD["help"][1])
-        help_menu.add_command(label=self.KEY_BOARD["check_for_update"][2],
-                              command=self.KEY_BOARD["check_for_update"][3],
-                              accelerator=self.KEY_BOARD["check_for_update"][1])
-        help_menu.add_separator()
-        help_menu.add_cascade(label="百宝箱", menu=treasure_menu, activebackground=choice(self.COLOR),
-                              foreground=choice(self.COLOR))
-        treasure_menu.add_command(label="今日人品", command=self.tr_today, activebackground="purple",
-                                  foreground="purple")
-        treasure_menu.add_command(label="临时文本框", command=lambda: self.template_sysTerminal(
-            pass_, False, "temporary_text", show_ter_warning=False), activebackground="pink", foreground="pink")
-        treasure_menu.add_command(label="弹出消息框", command=self.tr_msgbox, activebackground="blue",
-                                  foreground="blue")
-        treasure_menu.add_command(label="帮我选择", command=self.tr_choose, activebackground="cyan",
-                                  foreground="cyan")
-        treasure_menu.add_command(label="md5值计算", command=lambda: self.template_sysTerminal(
-            lambda x: showinfo("md5生成", "md5值为：\n" + pk.get_md5(x)), False, "md5sum",
-            # initialvalue="Type the string you want to calculate. . .",
-            show_ter_warning=False), activebackground="green", foreground="green")
-        treasure_menu.add_command(
-            label="随机ABCD选项生成（1次）", activebackground="gold", foreground="gold",
-            command=lambda: showinfo("随机选项生成", f"生成的随机选项：{choice(['A', 'B', 'C', 'D'])}"))
-        treasure_menu.add_command(
-            label="随机ABCD选项生成（10次）", activebackground="orange", foreground="orange",
-            command=lambda: showinfo("随机选项生成", f"生成的随机选项：{list2str([choice(
-                ['A', 'B', 'C', 'D']) for _ in range(10)], sep=',')}"))
-        treasure_menu.add_separator()
-        treasure_menu.add_command(
-            label="千万别点会爆炸", foreground="red", activebackground="red", command=lambda: self.tr_window_move(
-                count=-1, show_warning=True, fallen_step5=2, change_color=not bool(randint(0, 4))))
-
-        cursor_menu.add_command(label="[WIP]复制", state=DISABLED)
-        cursor_menu.add_command(label="[WIP]粘贴", state=DISABLED)
-        cursor_menu.add_command(label="导出日志文件", command=export_simplog)
-
-        ttk.Button(self, text=self.KEY_BOARD["run"][2], style=self.BUTTON_STYLE_USE, width=15,
-                   command=self.KEY_BOARD["run"][3]).grid(
-            row=0, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(self, text=self.KEY_BOARD["read_arc"][2], style=self.BUTTON_STYLE_USE, width=15,
-                   command=self.KEY_BOARD["read_arc"][3]).grid(
-            row=0, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(self, text=self.KEY_BOARD["save_arc"][2], style=self.BUTTON_STYLE_USE, width=15,
-                   command=self.KEY_BOARD["save_arc"][3]).grid(
-            row=1, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(self, text="预设: forever", style=self.BUTTON_STYLE_USE, width=15,
-                   command=lambda: self.warn_nowindow(True, True)).grid(
-            row=1, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(self, text=self.KEY_BOARD["settings"][2], style=self.BUTTON_STYLE_USE, width=15,
-                   command=self.KEY_BOARD["settings"][3]).grid(
-            row=2, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        # ttk.Button(self, text="temp.logout", style=self.BUTTON_STYLE_USE, width=15,
-        #            command=lambda: self.logout(arc_mode=2, del_log=True, del_conf=True, del_subfile=False)).grid(
-        #     row=2, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(self, text="最小化到系统托盘", style=self.BUTTON_STYLE_USE, width=15,
-                   command=self.withdraw, state=NORMAL).grid(
-            row=2, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(self, text=self.KEY_BOARD["save_exit"][2], command=self.KEY_BOARD["save_exit"][3],
-                   style=self.BUTTON_STYLE_USE, width=30).grid(
-            row=3, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        self.bind("<Button-3>", lambda event: cursor_menu.post(event.x_root, event.y_root))
-        self.update()
-
 
 class Pk_Stray(PeekerGui):
     def __init__(self, syncRoot_fp):
@@ -1794,10 +1282,13 @@ class Pk_Stray(PeekerGui):
         """
         menu = (
             pystray.MenuItem('显示', self.show_window, default=True),
+            pystray.MenuItem(self.KEY_BOARD["save_arc"][2], self.KEY_BOARD["save_arc"][3]),
             pystray.Menu.SEPARATOR,  # 在系统托盘菜单中添加分隔线
-            pystray.MenuItem(self.KEY_BOARD["save_exit"][2], self.KEY_BOARD["save_exit"][3]))
+            pystray.MenuItem(self.KEY_BOARD["save_exit"][2], self.KEY_BOARD["save_exit"][3])
+        )
         image = Image.open(self.ICON_FP)
         self.icon = pystray.Icon("icon", image, "图标名称", menu)
+        print(self.icon.name)
         threading.Thread(target=self.icon.run, daemon=True).start()
 
     # 关闭窗口时隐藏窗口，并将 Pystray 图标放到系统托盘中。

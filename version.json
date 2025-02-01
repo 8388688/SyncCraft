@@ -1,5 +1,11 @@
 {
     "updates": {
+        "1.8.1": {
+            "build_time": 1738339200,
+            "content": "更新实例设置和全局设置的界面\n完成右键弹出菜单的“复制”功能",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.8/SyncCraft.exe",
+            "stable": true
+        },
         "1.8": {
             "build_time": 1737648000,
             "content": "加入托盘图标 + 在线更新",
@@ -13,5 +19,5 @@
             "stable": true
         }
     },
-    "version": "1.8"
+    "version": "1.8.1"
 }
