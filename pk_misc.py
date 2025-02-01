@@ -20,7 +20,7 @@ from win32com import client
 from webbrowser import open as webbopen
 
 __version__ = "1.8.1"
-build_time = 1737648000
+build_time = 1738339200
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 global_settings_dirp = join(getenv("APPDATA"), TITLE)
