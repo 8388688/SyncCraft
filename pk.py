@@ -16,7 +16,6 @@ from subprocess import run as command
 from sys import exit as sys_exit, executable as sys_executable, version_info
 from traceback import format_exc
 from typing import Any, Literal, LiteralString, Callable
-import wmi
 import colorama
 
 from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
@@ -518,21 +517,6 @@ class Peeker:  # TODO: 参考“点名器.py”
         # 第 2^7 位：src 所在挂载点的卷标是否存在于【白】名单
         cur_exists_ch = 0
         cur_exists_list = dict()
-        # 本文中的代码在 win7 SP1 32bit + Python 2.7.8的环境下测试通过。
-        #
-        # 其实原理上不是用的Python自己的API，而是调用了windows的命令wmic。这个命令是调用WMI的命令行接口。通过WMI我们可以获取很多windows系统的信息。
-        #
-        # 代码如下：
-        #
-        #     import os
-        #     data = os.popen("wmic VOLUME GET Label").read()
-        #     print data.decode("gb2312")
-        #
-        # 第二行就是调用windows命令wmic并返回结果。
-        #
-        # 第三行输出，注意为了正确输出中文卷标，应当做解码，而windows命令行的默认编码方式是gb2312。
-        #
-        # 结果以“Label"行开始，后面每行是一个本地磁盘的卷标。空行表示当前磁盘没有设置卷标。d
 
         if exists(file_path):
             cur_exists_ch += 1 * 2 ** 0  # m * n ** p format: 以 n 进制表示的数字串，第 p 位数字为 m
@@ -540,12 +524,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         else:
             cur_exists_ch += 0
             cur_exists_list.update({"exists": False})
-        """
-        partitions = disk_partitions()
-        wmi_console = wmi.WMI()
-        # for partition in wmi_console.Win32_DiskDrive():
-        #     if partition.SerialNumber
-        """
+
         tmp = self.__label2mountId(file_path)
         self.record_fx(f"{file_path} 对应的卷 ID：{tmp}")
         if tmp and tmp != file_path:

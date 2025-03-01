@@ -1,9 +1,15 @@
 {
     "updates": {
+        "1.9.0": {
+            "build_time": 1740758400,
+            "content": "- Modified: 启动界面的 GUI\n- Modified: 导出配置文件的默认文件名\n- Fixed: 修正“以管理员权限运行”函数时，报 Failed to Remove Temporary Directory... 警告\n- Deleted: 移除对 pyperclip 的依赖\n- Deleted: 移除用 win32api 写的 topmost_st 函数，移除对 pythoncom, win32con, win32gui, win32com 的依赖\n- Modified: 移除启动界面的“启动完成后退出”文本框",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9/SyncCraft.exe",
+            "stable": true
+        },
         "1.8.1": {
             "build_time": 1738339200,
             "content": "更新实例设置和全局设置的界面\n完成右键弹出菜单的“复制”功能",
-            "url": "https://github.com/8388688/SyncCraft/releases/download/1.8/SyncCraft.exe",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.8.1/SyncCraft.exe",
             "stable": true
         },
         "1.8": {

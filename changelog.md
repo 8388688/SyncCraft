@@ -1,10 +1,21 @@
-# ShadowCraft - 一个后台文件同步的程序
+# SyncCraft - 一个后台文件同步的程序
 
 # 预告
 
 # 更新历史
 
-##      
+## SyncCraft 1.9.0（2025-03-01 发布）
+
+**破坏性更新**
+
+修正日志格式，代码风格
+
+- Modified: 启动界面的 GUI
+- Modified: 导出配置文件的默认文件名
+- Fixed: 修正“以管理员权限运行”函数时，报 Failed to Remove Temporary Directory... 警告
+- Deleted: 移除对 pyperclip, wmi 的依赖
+- Deleted: 移除用 win32api 写的 topmost_st 函数，移除对 pythoncom, win32con, win32gui, win32com 的依赖
+- Modified: 移除启动界面的“启动完成后退出”文本框
 
 ## SyncCraft 1.8.1（2025-02-01 发布）
 

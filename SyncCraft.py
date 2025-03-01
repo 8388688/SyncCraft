@@ -5,7 +5,6 @@ from os.path import dirname, normpath, samefile, isdir
 from tkinter.filedialog import askdirectory
 from webbrowser import open as webbopen
 
-import threading
 from requests import get
 from requests.exceptions import ConnectTimeout
 
