@@ -1,25 +1,38 @@
 from __future__ import print_function
 import pywintypes
 import win32api
+import win32file
 import win32process
 import win32security
 import ntsecuritycon
 from builtins import open as fopen
 from json import loads, dumps
-from time import time, localtime, strftime, sleep, time_ns
-from os import rename, system, remove, rmdir, getenv, listdir, listmounts, listvolumes
+from time import time
+from os import chdir, rename, system, remove, rmdir, getenv, listdir, listmounts, listvolumes
 from os.path import exists, join, isfile, isdir, realpath, abspath, dirname
 from psutil import disk_partitions
 from shutil import copy2, copystat, disk_usage
 from subprocess import run as command
 from sys import exit as sys_exit, executable as sys_executable, version_info
 from traceback import format_exc
+from typing import Any, Literal, LiteralString, Callable
 import wmi
+import colorama
 
 from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
-from pk_misc import is_admin, __version__, windll, is_exec, TITLE, get_time, get_exec, global_settings_fp, \
-    global_settings_dirp
+from pk_misc import is_admin, __version__, windll, is_exec, TITLE, get_time, get_exec
 from file_op import *
+
+
+def safe_open(fp, fx: Callable = loads, invalidDefaultValue="{}", **kwargs) -> dict:
+    if exists(fp):
+        with fopen(fp, "r", **kwargs) as f:
+            return fx(f.read())
+    else:
+        print(f"{fp} 文件不存在！")
+        with fopen(fp, "w", **kwargs) as f:
+            f.write(invalidDefaultValue)
+        return {}
 
 
 class Peeker:  # TODO: 参考“点名器.py”
@@ -43,6 +56,13 @@ class Peeker:  # TODO: 参考“点名器.py”
     LOG_ERROR = "error"
     LOG_DEBUG = "debug"
 
+    LOG_COLOR = {
+        LOG_INFO: colorama.Fore.RESET,
+        LOG_WARNING: colorama.Fore.YELLOW,
+        LOG_ERROR: colorama.Fore.RED,
+        LOG_DEBUG: colorama.Fore.GREEN,
+    }
+
     ATTR_READ_ONLY = 1
     ATTR_HIDDEN = 2
     ATTR_SYSTEM = 4
@@ -55,16 +75,27 @@ class Peeker:  # TODO: 参考“点名器.py”
             | win32security.GROUP_SECURITY_INFORMATION
             | win32security.DACL_SECURITY_INFORMATION
     )
-    GLOBAL_LOG_DIRP = join(getenv("AppData"), TITLE, "__Logs__")
 
-    def __init__(self, syncRoot_fp, setup=False):  # TODO: 添加更多参数
+    DEFAULT_CONFIG_FNAME = "Sync.sc_conf"
+
+    GLOBAL_ROOT_FP = join(getenv("AppData"), TITLE)
+    GLOBAL_LOG_DIRP = join(GLOBAL_ROOT_FP, "__Logs__")
+
+    def __init__(self, syncRoot_fp, setup: bool = False):  # TODO: 添加更多参数
+        """
+
+        @param syncRoot_fp: 同步根目录
+        @param setup: 是否自动执行 setup() 函数
+        """
         super().__init__()
+        colorama.init(autoreset=True)
+
         self.record_fx = self.record_ln
         self.wait_fx = lambda x, busy=None: wait(x, busy_loop=busy)
         self.begin_time = time()
         self.sync_flag = True  # 为 False 时强行停止循环
         self.SYNC_ROOT_FP = syncRoot_fp  # 唯一，作为识别 ID
-        self.conf_fp = join(self.SYNC_ROOT_FP, "pk_config.json")
+        self.conf_fp = join(self.SYNC_ROOT_FP, self.DEFAULT_CONFIG_FNAME)
         self.gs_log_fp = join(self.GLOBAL_LOG_DIRP, f"pk_api_{time() // 86400}.log")  # 86400: 一天一份日志
         self.log_dirp = join(self.SYNC_ROOT_FP, "__Logs__")
         self.log_fp = join(self.log_dirp, f"pk_api_{time() // 86400}.log")  # 86400: 一天一份日志
@@ -82,6 +113,11 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.__cursors_dst = []  # 存储格式也是绝对路径
 
         # 下面这几行，只是对类变量起到一个定义的作用，后面的赋值并不重要，可以任意修改
+        self.log_fiet = None
+        self.gs_log_fiet = None
+        self.conf_fiet = None
+        self.conf_config = None
+
         self.cursors = {}
         self.solids = []
         self.userdata = {}
@@ -100,6 +136,8 @@ class Peeker:  # TODO: 参考“点名器.py”
         if setup:
             self.setup()
 
+    """已弃用
+    
     def __del__(self):
         self.save(ren=True)
         exit_exc = format_exc()
@@ -109,13 +147,19 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.record_fx(f"删除实例 {self.SYNC_ROOT_FP}. . .")
         self.log_fiet.close()
         self.gs_log_fiet.close()
+    """
 
     def upgrade_config(self):
+        """将实例属性保存到 config 文件中
+
+        @return: None
+        """
         self.conf_config.update({
             "syncRoot_fp": self.SYNC_ROOT_FP, "cursors": self.cursors,
             "run_beginning": self.run_beginning, "run_completion": self.run_completion,
             "synced_archives": self.synced_archives, "reserved_size": self.reserved_size,
-            "wait_busy_loop": self.wait_busy_loop, "__version__": __version__
+            "wait_busy_loop": self.wait_busy_loop, "__version__": __version__,
+            "__RunningMode__": self.__class__.__name__
         })
         self.userdata.update({
             "run_times": self.run_times, "last_run_times": self.last_run_times
@@ -133,6 +177,11 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.record_fx("Upgrade Config 已更新")
 
     def extract_config(self):
+        """将 config 文件中记录的实例变量【数值】更新到实例变量中
+
+        @return: None
+        """
+        # __version__ 和 __RunningMode__ 属于只读变量，故未在此处更新。
         self.cursors = self.conf_config.get("cursors", {})
         # 格式：
         # {
@@ -168,7 +217,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         })
         self.record_fx("Extract Config 已更新")
 
-    def save(self, ren=True):
+    def save(self, ren: bool = True):
         self.record_fx(f"保存 {self.SYNC_ROOT_FP} {ren=} 同步目录的配置信息. . . ")
         if self.log_fiet_live:
             self.log_fiet.flush()
@@ -177,12 +226,13 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.upgrade_config()
         try:
             self.conf_fiet = fopen(self.conf_fp, "w", encoding="utf-8")
-            self.conf_fiet.write(dumps(self.conf_config))
-            self.conf_fiet.close()
         except PermissionError:
             self.record_fx(f"无法保存 - 权限不足")
-        except:
+        except OSError:
             self.record_fx(f"无法保存 - 原因如下\n{format_exc()}")
+        else:
+            self.conf_fiet.write(dumps(self.conf_config))
+            self.conf_fiet.close()
 
         if ren:
             self.renameall_cur(save=True)
@@ -191,12 +241,13 @@ class Peeker:  # TODO: 参考“点名器.py”
     def __get_id(self):
         return get_md5(self.SYNC_ROOT_FP)
 
-    def join_cmdline(self, *args):
+    def join_cmdline(self, *args: Callable):
         for fx in args:
             if callable(fx):
                 fx()
             else:
-                self.record_fx("Error:", str(fx), "不可调用。")
+                self.record_fx(str(fx), "不可调用。", tag=self.LOG_WARNING)
+                # raise ValueError(f"{str(fx)}不可调用。")
 
     def get_fromkey(self, keyword, src=None):
         if src is None:
@@ -204,13 +255,6 @@ class Peeker:  # TODO: 参考“点名器.py”
         else:
             tmp = self.cursors.get(src, {}).get(keyword, self.profileSettings.get(keyword, None))
         return tmp
-
-    def get_volume_label(self, drive):
-        try:
-            return win32api.GetVolumeInformation(drive)[0]
-        except pywintypes.error:
-            self.record_fx(f"执行出错：\n{format_exc()}")
-            return None
 
     def __label2mountId(self, drive):
         for i in listvolumes():
@@ -227,12 +271,21 @@ class Peeker:  # TODO: 参考“点名器.py”
             # raise FileNotFoundError("指定的驱动器不存在")
             return drive
 
-    def __get_volume_label(self, drive):
+    def __get_volume_label(self, drive) -> str | None:
         try:
             return win32api.GetVolumeInformation(drive)[0]
         except pywintypes.error:
             self.record_fx(f"执行出错：\n{format_exc()}")
             return None
+
+    def __set_volume_label(self, drive, label=""):
+        try:
+            return win32file.SetVolumeLabel(drive, label)
+        except pywintypes.error:
+            self.record_fx(f"执行出错：\n{format_exc()}")
+
+    get_volume_label = __get_volume_label
+    set_volume_label = __set_volume_label
 
     def upgrade_exclude_dir(self):
         self.exclude_in_del = (self.log_dirp, self.conf_fp) + tuple(self.synced_archives)
@@ -246,33 +299,26 @@ class Peeker:  # TODO: 参考“点名器.py”
         # self.log_fiet.flush()
         if (global_log is None and self.gs_log_fiet_live) or global_log:
             self.gs_log_fiet.write(f"[{now_time} | {self.SYNC_ROOT_FP}]{tag}: " + tmp)
-        print(f"[{now_time}]{tag}: " + tmp, sep="", end="")
+        print(self.LOG_COLOR[tag] + f"[{now_time}]{tag}: " + tmp, sep="", end="")
 
     def setup(self):
         self.gs_log_fiet = open(self.gs_log_fp, "a", encoding="utf-8")
         self.log_fiet = open(self.log_fp, "a", encoding="utf-8")
-        if exists(self.conf_fp):
-            self.conf_fiet = open(self.conf_fp, "r", encoding="utf-8")
-            self.conf_config = loads(self.conf_fiet.read())
-        else:
-            self.conf_fiet = open(self.conf_fp, "w", encoding="utf-8")
-            self.conf_fiet.write("{}")
-            self.conf_config = {}
-        self.conf_fiet.close()
+        self.conf_config = safe_open(self.conf_fp, loads)
 
         self.extract_config()
         tmp_ver = self.conf_config.get("__version__", "[Unknown]")
         if __version__ == tmp_ver:
             pass
         else:
-            self.record_fx(f"WARNING: 运行版本不一致 {__version__} ≠ {tmp_ver}", tag=self.LOG_WARNING)
+            self.record_fx(f"运行版本不一致 {__version__} ≠ {tmp_ver}", tag=self.LOG_WARNING)
 
         self.get_admin()
 
         # 优先级： 根目录操作 > replace > 固定分配 > 游标同步
         # 为提高程序效率，这里并没有使用 dimensional_list() 函数将列表“一维化”
         # 虽然使用了一个二重循环，但运行效率比加入 dimensional_list() 好得多
-        for i in ([self.SYNC_ROOT_FP, ], list(map(lambda x: join(self.SYNC_ROOT_FP, x), self.__cursors_dst))):
+        for i in ([self.SYNC_ROOT_FP, ], [join(self.SYNC_ROOT_FP, i) for i in self.__cursors_dst]):
             for j in i:
                 safe_md(j, quiet=True)
                 self.record_fx(f"create dir: {j}")
@@ -293,11 +339,12 @@ class Peeker:  # TODO: 参考“点名器.py”
             return True
         else:
             if not quiet:
-                self.record_fx(f"WARNING: 尝试使用管理员权限运行 :(", tag=self.LOG_WARNING)
+                self.record_fx(f"尝试使用管理员权限运行 :(", tag=self.LOG_WARNING)
             if take:
                 suffix = self.execute_fp.replace("/", "\\").split("\\")[-1].split(".")[-1]
                 self.record_fx(f"准备以管理员身份重启. . . . . . {sys_executable=}, {self.execute_fp=}, {suffix=}")
                 self.save(ren=True)
+                chdir(getenv("Temp"))
                 if is_exec():
                     windll.shell32.ShellExecuteW(None, "runas", self.execute_fp, self.SYNC_ROOT_FP, None, 1)
                 else:
@@ -310,7 +357,7 @@ class Peeker:  # TODO: 参考“点名器.py”
     def update_cursor(self):
         self.__cursors_src = list(self.cursors.keys())
         self.record_fx(f"Upgrade: {self.__cursors_src=}")
-        self.__cursors_dst = list(map(lambda x: x["dst"], self.cursors.values()))
+        self.__cursors_dst = [i["dst"] for i in self.cursors.values()]
         self.record_fx(f"Upgrade: {self.__cursors_dst=}")
 
     def __rename_and_register(self, __dir, __from_src=None):
@@ -374,7 +421,7 @@ class Peeker:  # TODO: 参考“点名器.py”
                 self.delete(item=item)
             flag = True
             for i in self.cursors.values():
-                i_arc = i.get("archives", [])
+                i_arc: list = i.get("archives", [])
                 for j in i_arc:
                     if j in removed:
                         i_arc.remove(j)
@@ -405,7 +452,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         elif hidden:
             ace = Peeker.ATTR_READ_ONLY + Peeker.ATTR_HIDDEN + Peeker.ATTR_SYSTEM + Peeker.ATTR_ARCHIVE
             self.record_fx(f"Set Attribute: {ace}")
-            win32api.SetFileAttributes(fname, ace)
+            win32file.SetFileAttributes(fname, ace)
 
         if preserve is not None:
             userx_sid = win32security.LookupAccountName("", "Everyone")[0]
@@ -443,9 +490,8 @@ class Peeker:  # TODO: 参考“点名器.py”
                                                win32security.DACL_SECURITY_INFORMATION,
                                                None, None, dacl, None)
 
-            self.record_fx(
-                "Set SecurityAce: " if preserve else "Delete SecurityAce: " + f"{
-                userx_sid}: {acl_revision, flag, permission}")
+            self.record_fx("Set SecurityAce: " if preserve
+                           else "Delete SecurityAce: " + f"{userx_sid}: {acl_revision, flag, permission}")
         else:
             self.record_fx(f"{fname} 不保护")
 
@@ -655,7 +701,7 @@ class Peeker:  # TODO: 参考“点名器.py”
                         elif not exists(sname):  # file or dir?
                             self.record_fx(f"错误：{sname} 文件或目录名称不存在")
                 else:  # 此 else 对应 if
-                    self.record_fx("can_start 条件不足，停止同步")
+                    self.record_fx("before_sync 条件不足，停止同步")
                 del tmp
 
             if save:
@@ -682,7 +728,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.wait_fx(delay_var)
         self.run_times += 1
 
-    def can_peek(self, factor: int = OR, rel=EQU):
+    def can_peek(self, factor: int | Literal[OR, AND] = OR, rel=EQU):
         # factor: 至少 factor 个条件满足后继续执行，当此值被设为 AND 或 OR 时，rel 的值将被忽略。
         cur_exists_ch = 0
         self.record_fx("更新的 self.__cursors_src", self.__cursors_src)
@@ -704,28 +750,6 @@ class Peeker:  # TODO: 参考“点名器.py”
             return True
         else:
             return False
-
-    def can_start(self, file_path, factor: int = OR, rel=EQU):
-        self.record_fx(f"can_start 已弃用！推荐 {self.before_sync.__name__}")
-        ########################################
-        """===========Legacy===========
-        
-        tmp_ch = cur_exists_list.count(True)
-        if (tmp_ch == len(self.__cursors_src) and factor == Peeker.AND) or (
-                tmp_ch != 0 and factor == Peeker.OR):
-            return True
-        elif (rel == Peeker.EQU and tmp_ch == factor) or \
-                (rel == Peeker.NEQ and tmp_ch != factor) or \
-                (rel == Peeker.GTR and tmp_ch > factor) or \
-                (rel == Peeker.GEQ and tmp_ch >= factor) or \
-                (rel == Peeker.LSS and tmp_ch < factor) or \
-                (rel == Peeker.LEQ and tmp_ch <= factor):
-            return True
-        else:
-            return False
-        
-        ===========/Legacy==========="""
-        return True
 
     def get_cursor_list(self):
         return self.__cursors_src
@@ -799,3 +823,7 @@ class Peeker:  # TODO: 参考“点名器.py”
 
         self.sync_flag = True
         self.record_fx("run_until: 同步旗标已解锁")
+
+
+if __name__ == '__main__':
+    pass

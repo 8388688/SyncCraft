@@ -1,26 +1,13 @@
 import sys
-import tkinter as tk
 from ctypes import windll
-from http.client import RemoteDisconnected
-from os import rename, unlink, getenv
-from os.path import abspath, exists, join
-from time import time, localtime, strftime, strptime, mktime
-from tkinter import ttk
-from tkinter.constants import *
-from tkinter import messagebox as msgbox
+from os import getenv
+from os.path import abspath, join
+from time import time, localtime, strftime
 
-import pythoncom
-import win32con
-import win32gui
 import simple_tools as st
-import threading
-from requests import get
-from requests.exceptions import ConnectTimeout
-from win32com import client
-from webbrowser import open as webbopen
 
-__version__ = "1.8.1"
-build_time = 1738339200
+__version__ = "1.9.0"
+build_time = 1740758400
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 global_settings_dirp = join(getenv("APPDATA"), TITLE)
@@ -50,7 +37,7 @@ def get_freespace_ctypes(folder):
 def is_admin():
     try:
         return windll.shell32.IsUserAnAdmin()
-    except:
+    except Exception as e:
         return False
 
 
@@ -67,164 +54,6 @@ def get_exec():
 
 def get_time(format_="%Y-%m-%dT%H.%M.%SZ"):
     return strftime(format_, localtime(time()))
-
-
-def topmost_st(name, top, focus=True):
-    hwnd_title = {}
-
-    def get_all_hwnd(hwnd_, mouse):
-        if (win32gui.IsWindow(hwnd_)
-                and win32gui.IsWindowEnabled(hwnd_)
-                and win32gui.IsWindowVisible(hwnd_)):
-            hwnd_title.update({hwnd_: win32gui.GetWindowText(hwnd_)})
-
-    win32gui.EnumWindows(get_all_hwnd, 0)
-    hwnd = win32gui.FindWindow(None, name)
-
-    if hwnd:
-        win32gui.ShowWindow(hwnd, win32con.SW_SHOWNORMAL)
-
-        pythoncom.CoInitialize()
-        shell = client.Dispatch("WScript.Shell")
-        shell.SendKeys('%')
-        if focus:
-            win32gui.SetForegroundWindow(hwnd)
-        if top is None:
-            pass
-        elif top:
-            win32gui.SetWindowPos(
-                hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
-                win32con.SWP_NOMOVE | win32con.SWP_NOACTIVATE | win32con.SWP_NOOWNERZORDER | win32con.SWP_SHOWWINDOW | win32con.SWP_NOSIZE)
-        else:
-            win32gui.SetWindowPos(
-                hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
-                win32con.SWP_SHOWWINDOW | win32con.SWP_NOSIZE | win32con.SWP_NOMOVE)
-    else:
-        return False
-
-
-def update_sc(win: tk.Tk | tk.Toplevel, record_fx=print, up_data=(__version__, build_time), silent=False):
-    def update_api():
-        nonlocal size, chunk_size, start_t, content_size, silent, tmp
-        if not silent:
-            down_btn.config(state=DISABLED)
-            dl_bar.grid(row=3, column=0, columnspan=3, padx=10, pady=5)
-            dl_bar.start()
-            root.update()
-        else:
-            record_fx("准备下载")
-        try:
-            url = up_content[updatable].get("url", None)
-        except ConnectionRefusedError:
-            record_fx("[WinError 10061] 似乎 github.com 已拒绝连接。[ConnectionRefusedError]")
-        except ConnectTimeout:
-            record_fx("加载缓慢。[ConnectTimeout]")
-        except TimeoutError:
-            record_fx('连接超时。[TimeoutError]')
-        except RemoteDisconnected:
-            record_fx("请求头的 User-Agent 错误。[RemoteDisconnected]")
-        except ConnectionAbortedError:
-            record_fx("你的主机中的软件中止了一个已建立的连接。")
-        except ConnectionError:
-            record_fx("ConnectionError")
-        else:
-            if url is None:
-                if not silent:
-                    webbopen("https://github.com/8388688/SyncCraft/releases")
-                return -2
-            elif url:
-                req = get(url, stream=True)  # 这里需要对 url 更新
-            else:
-                req = get(f"https://github.com/8388688/SyncCraft/releases/download/{updatable}/{TITLE}.exe",
-                          stream=True)
-            content_size = int(req.headers.get("content-length", -1))
-            if req.status_code == 200 and content_size != -1:
-                if not silent:
-                    dl_bar.stop()
-                    dl_bar.config(mode="determinate", maximum=content_size)
-
-                with open(get_exec() + ".tmp", "wb") as package:
-                    count_ch = 0
-                    for chunk in req.iter_content(chunk_size=chunk_size):
-                        count_ch += 1
-                        package.write(chunk)
-                        size += len(chunk)
-                        tmp = (f"已下载 {st.scientific_notate(size, custom_seq=rate_list, rate=1024)}/"
-                               f"{st.scientific_notate(content_size, custom_seq=rate_list, rate=1024)}")
-                        if not silent:
-                            dl_bar.config(value=size)
-                            label.config(text=tmp)
-                            root.update()
-                            # root.update_idletasks()
-                        else:
-                            if count_ch % 10 == 0:
-                                record_fx(tmp)
-
-                exec_bak = get_exec() + ".old"
-                if exists(exec_bak):
-                    unlink(exec_bak)
-                rename(get_exec(), exec_bak)
-                rename(get_exec() + ".tmp", get_exec())
-            else:
-                record_fx("下载错误！", response.status_code)
-            tmp = "更新完成，用时%.1fs\n请重启 %s" % (time() - start_t, TITLE)
-            if not silent:
-                dl_bar.forget()
-                msgbox.showinfo("更新完成", tmp, parent=root)
-            else:
-                record_fx(tmp)
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, '
-                      'like Gecko) Chrome/107.0.0.0 Safari/537.36',
-        # 'Connection': 'close'  # 不使用持久连接
-    }
-    # response = get(url, stream=True)
-    response = get(r'https://raw.githubusercontent.com/8388688/SyncCraft/main/version.json',
-                   headers=headers)
-    response_json = response.json()
-    up_content = response_json["updates"]
-    size = 0
-    start_t = time()
-    chunk_size = 8192  # 每次下载的数据大小
-    content_size = int(response.headers.get("content-length", -1))
-    updatable = up_data[0]
-
-    # current_date = mktime(strptime("", "%Y-%m-%d"))
-    tmp = ""
-    buildTime = up_data[1]
-    for i in up_content.keys():
-        if up_content[i]["build_time"] > buildTime:
-            updatable = i
-            buildTime = up_content[i]["build_time"]
-            # current_date = response_json[i]["date"]
-            tmp = f"更新内容：\n{up_content[i]["content"]}"
-
-    if updatable == up_data[0]:
-        record_fx("暂无更新")
-        if not silent:
-            msgbox.showinfo("检查更新", "暂无更新")
-    else:
-        if not silent:
-            root = tk.Toplevel(win)
-            up_content_text = tk.Text(root, width=60, height=18, undo=False, bd=3)
-            up_content_text.grid(row=1, column=0, columnspan=3, padx=10, pady=5)
-            tk.Label(root, text=f"{TITLE} 有新的更新！", bd=3, relief=GROOVE, width=60, height=1).grid(
-                row=0, column=0, columnspan=3, padx=10, pady=10)
-            dl_bar = ttk.Progressbar(root, length=400, cursor="spider", mode="indeterminate", maximum=content_size)
-            tk.Label(root, text=f"正在将 {TITLE} 从 {__version__} 更新至 {updatable} 版本").grid(
-                row=2, column=0, columnspan=2, padx=10, pady=5)
-            label = tk.Label(root, text="")
-            label.grid(row=2, column=2, padx=10, pady=5)
-            down_btn = tk.Button(root, width=10, text="Download!", command=update_api)
-            down_btn.grid(row=4, column=0, padx=10, pady=5)
-            tk.Button(root, width=10, text="Cancel", command=root.destroy).grid(row=4, column=2, padx=10, pady=5)
-            up_content_text.insert(END, tmp)
-            up_content_text.config(state=DISABLED)
-            root.update()
-        else:
-            record_fx(f"正在将 {TITLE} 从 {__version__} 更新至 {updatable} 版本")
-            update_api()
 
 
 help_text = {

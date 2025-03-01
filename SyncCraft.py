@@ -1,20 +1,25 @@
-from os import chdir, getenv
-from os.path import dirname, normpath, samefile, exists
+import json.decoder
+from http.client import RemoteDisconnected
+from os import chdir, remove, rename
+from os.path import dirname, normpath, samefile, isdir
 from tkinter.filedialog import askdirectory
+from webbrowser import open as webbopen
+
+import threading
+from requests import get
+from requests.exceptions import ConnectTimeout
 
 from pk_gui import *
-from pk_misc import update_sc, global_settings_dirp, global_settings_fp
-import threading
-import pyperclip
+from pk_misc import global_settings_dirp, global_settings_fp, __version__, build_time, get_exec, is_exec
 
 
 # from distutils import *
 
 
-def get_conf():
-    if pk.exists(global_settings_fp):
+def get_conf() -> dict:
+    if exists(global_settings_fp):
         gs_fiet = open(global_settings_fp, "r", encoding="utf-8")
-        ret = pk.loads(gs_fiet.read())
+        ret: dict = pk.loads(gs_fiet.read())
     else:
         gs_fiet = open(global_settings_fp, "w", encoding="utf-8")
         gs_fiet.write("{}")
@@ -35,16 +40,18 @@ def fix_conf(del_invalid_path=False, fix_entry: ttk.Combobox | tk.Entry | ttk.En
     gs_config.update({"archives": gs_config.get("archives", ["D:\\BackDT_sh", ])})
     gs_config.update({"maxArchiveHistory": gs_config.get("maxArchiveHistory", -1)})
     gs_config.update({"maxShowArchiveHistory": gs_config.get("maxShowArchiveHistory", 10)})
+    gs_archives_tmp = gs_config.get("archives", [])
     if del_invalid_path:
         eaten = []
-        for index in gs_config["archives"]:
+        for index in gs_archives_tmp:
             if not exists(index):
                 eaten.append(index)
         for index in eaten:
-            gs_config["archives"].remove(index)
+            gs_archives_tmp.remove(index)
+    gs_config.update({"archives": gs_archives_tmp})
     if fix_entry is not None:
         fix_entry.config(
-            values=gs_config["archives"][0: min(len(gs_config["archives"]), gs_config["maxShowArchiveHistory"])]
+            values=gs_archives_tmp[0: min(len(gs_archives_tmp), gs_config["maxShowArchiveHistory"])]
         )
     gs_config.update({"autoUpdate": gs_config.get("autoUpdate", None)})
 
@@ -65,7 +72,7 @@ def global_settings():
             if exists(user_input.get()) and exists(index) and samefile(user_input.get(), index):
                 gs_config["archives"].remove(index)
         else:
-            pass_(quiet=True)
+            st.pass_(quiet=True)
         gs_config["archives"].insert(0, user_input.get())
         if gs_config["maxArchiveHistory"] != -1:
             gs_config["archives"] = gs_config["archives"][
@@ -74,19 +81,10 @@ def global_settings():
             # gs_config["archives"] = gs_config["archives"]
             pass
         put_conf(gs_config)
-        if exit_when_launch.get():
-            root.destroy()
-        else:
-            profile_ch += 1
-            # root.withdraw()
-            if not profile_ch > 1:
-                root.quit()
-            else:
-                root.mainloop()
-            # return global_settings()
+        root.destroy()
 
     if gs_config.get("autoUpdate") is None:
-        user_ch = askyesnocancel("自动更新", f"你是否允许 {TITLE} 启动时自动检查更新？")
+        user_ch = msgbox.askyesnocancel("自动更新", f"你是否允许 {TITLE} 启动时自动检查更新？")
         if user_ch is None:
             pass
         else:
@@ -94,15 +92,15 @@ def global_settings():
         put_conf(gs_config)
 
     root = tk.Tk()
-    root.title(ShadowCraft.TITLE)
-    root.iconbitmap(ShadowCraft.ICON_FP)
+    root.title(SyncCraft.TITLE)
+    root.iconbitmap(SyncCraft.ICON_FP)
     root.resizable(False, False)
     get_center(root)
-    topmost_st(ShadowCraft.TITLE, None, True)
+
+    root.deiconify()
     # root.minsize(300, 300)
 
     user_input = tk.StringVar()
-    exit_when_launch = tk.BooleanVar()
     valid_ui = False
     # entry = tk.Spinbox(root, textvariable=user_input, width=42, highlightthickness=2, highlightbackground="grey",
     #                    highlightcolor="gold")
@@ -113,25 +111,22 @@ def global_settings():
     entry.grid(row=1, column=0, columnspan=3, padx=10, pady=5)
     label = tk.Label(root, text="输入同步文件夹的根路径")
     label.grid(row=0, column=0, columnspan=3, padx=10, pady=5)
-    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=10,
-              text="确定≌", command=save_and_exit).grid(row=2, column=0, padx=10, pady=5)
-    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=10,
-              text="取消", command=root.destroy).grid(row=2, column=1, padx=10, pady=5)
-    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=10,
-              text="浏览", command=browse).grid(row=2, column=2, padx=10, pady=5)
-    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=10,
+    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=20,
+              text="确定", command=save_and_exit).grid(row=2, column=1, columnspan=2, sticky=E, padx=10, pady=5)
+    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=20,
+              text="取消", command=root.destroy).grid(row=2, column=0, columnspan=2, sticky=W, padx=10, pady=5)
+    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=12,
+              text="浏览", command=browse).grid(row=3, column=0, padx=10, pady=5)
+    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=12,
               text="清理失效路径", command=lambda: fix_conf(del_invalid_path=True, fix_entry=entry)).grid(
-        row=3, column=0, padx=10, pady=5)
-    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=10,
-              text="使用临时身份", command=lambda: user_input.set(pk.join(global_settings_dirp, "TempIdentity"))).grid(
         row=3, column=1, padx=10, pady=5)
-    tk.Checkbutton(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=10,
-                   text="启动完成后退出", variable=exit_when_launch, command=lambda: None).grid(
+    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=12,
+              text="使用临时身份", command=lambda: user_input.set(join(global_settings_dirp, "TempIdentity"))).grid(
         row=3, column=2, padx=10, pady=5)
 
     if gs_config.get("autoUpdate"):
         label.config(text="[检查更新中]" + label["text"])
-        update_th = threading.Thread(target=lambda: update_sc(root), daemon=True)
+        update_th = threading.Thread(target=lambda: SyncCraft.update_sc(root), daemon=True)
         update_th.start()
         # update(root, record_fx)
 
@@ -139,20 +134,172 @@ def global_settings():
     return valid_ui, user_input.get()
 
 
-class ShadowCraft(Pk_Stray):
+class SyncCraft(Pk_Stray):
     def __init__(self, syncRoot_fp):
         super().__init__(syncRoot_fp)
-        if pk.is_exec():
-            self.execute_fp = pk.get_exec()
+        if is_exec():
+            self.execute_fp = get_exec()
         else:
             self.execute_fp = __file__
 
         self.KEY_BOARD.update({
             "add_dir": ("<Control-n>", "Ctrl+N", "添加同步的文件夹", lambda x=None: self.gui_add()),
             "del_dir": ("<Control-d>", "Ctrl+D", "删除同步的文件夹", lambda x=None: self.gui_del()),
-            "settings": ("<Control-,>", "Ctrl+,", "基础设置（本地）", lambda x=None: self.gui_settings()),
-            "gs_settings": ("<Control-Shift-<>", "Ctrl+Shift+,", "基础设置（全局）", lambda x=None: self.gs_settings()),
+            "run": ("<Control-r>", "Ctrl+R", "运行", lambda x=None: self.gui_run()),
+            "settings": ("<Control-,>", "Ctrl+,", "实例设置", lambda x=None: self.gui_settings()),
+            "gs_settings": ("<Control-Shift-<>", "Ctrl+Shift+,", "全局设置", lambda x=None: self.gs_settings()),
+            "help": ("<F1>", "F1", "获取帮助", lambda x=None: self.gui_help("initial")),
+            "check_for_updates": (
+                "<Control-KeyRelease-U>", "Ctrl+U", "检查更新（联网）", lambda x=None: self.update_sc(self.record_fx)),
+            "check_for_fakeupdate": ("<Triple-Control-KeyRelease-u>", "Ctrl+U+U+U", "伪装旧版本以触发更新（联网）",
+                                     lambda x=None: self.update_sc(self.record_fx, up_data=("X.X.X.X", 0))),
+            "read_arc": ("<Alt-r>", "Alt+R", "检查存档",
+                         lambda x=None: self.gui_unlock(unlock_pre=False, del_=False, untie=True, read=True)),
+            "unlock_arc_r": ("<Alt-Shift-R>", "Alt+Shift+R", "解锁存档并查看",
+                             lambda x=None: self.gui_unlock(unlock_pre=True, del_=False, untie=True, read=True)),
+            "unlock_arc": ("<Alt-u>", "Alt+U", "解锁存档",
+                           lambda x=None: self.gui_unlock(unlock_pre=True, del_=False, untie=True, read=False)),
+            "unlockall_arc": ("<Alt-Shift-U>", "Alt+Shift+U", "解锁所有存档",
+                              lambda x=None: self.unlockall_cur(unlock_pre=True, delete=False, untie=True)),
+            "delete_arc": ("<Alt-d>", "Alt+D", "删除存档",
+                           lambda x=None: self.gui_unlock(unlock_pre=True, del_=True, untie=True, read=False)),
+            "deleteall_arc": ("<Alt-Shift-D>", "Alt+Shift+D", "删除所有存档",
+                              lambda x=None: self.unlockall_cur(unlock_pre=True, delete=True, untie=True)),
+            "untie_arc": ("<Alt-l>", "Alt+L", "解除存档的关联",
+                          lambda x=None: self.gui_unlock(unlock_pre=False, del_=False, untie=False, read=False)),
+            "untieall_arc": ("<Alt-Shift-L>", "Alt+Shift+L", "解除所有存档的关联",
+                             lambda x=None: self.unlockall_cur(unlock_pre=False, delete=False, untie=False)),
         })
+
+    def update_sc(self, record_fx=print, up_data=(__version__, build_time), silent=False, parent=None):
+        def update_api():
+            nonlocal size, chunk_size, start_t, content_size, silent, tmp
+            if not silent:
+                down_btn.config(state=DISABLED)
+                dl_bar.grid(row=3, column=0, columnspan=3, padx=10, pady=5)
+                dl_bar.start()
+                root.update()
+            else:
+                record_fx("准备下载")
+            try:
+                url = up_content[updatable].get("url", None)
+            except ConnectionRefusedError:
+                record_fx("[WinError 10061] 似乎 github.com 已拒绝连接。[ConnectionRefusedError]")
+            except ConnectTimeout:
+                record_fx("加载缓慢。[ConnectTimeout]")
+            except TimeoutError:
+                record_fx('连接超时。[TimeoutError]')
+            except RemoteDisconnected:
+                record_fx("请求头的 User-Agent 错误。[RemoteDisconnected]")
+            except ConnectionAbortedError:
+                record_fx("你的主机中的软件中止了一个已建立的连接。")
+            except ConnectionError:
+                record_fx("ConnectionError")
+            else:
+                if not is_exec() and not msgbox.askokcancel("警告", "你确定在程序中更新？", parent=root):
+                    return 2
+                elif url is None:
+                    if not silent:
+                        webbopen("https://github.com/8388688/SyncCraft/releases")
+                    return -2
+                elif url:
+                    req = get(url, stream=True)  # 这里需要对 url 更新
+                else:
+                    req = get(f"https://github.com/8388688/SyncCraft/releases/download/{updatable}/{TITLE}.exe",
+                              stream=True)
+                content_size = int(req.headers.get("content-length", -1))
+                if req.status_code == 200 and content_size != -1:
+                    if not silent:
+                        dl_bar.stop()
+                        dl_bar.config(mode="determinate", maximum=content_size)
+
+                    with open(get_exec() + ".tmp", "wb") as package:
+                        count_ch = 0
+                        for chunk in req.iter_content(chunk_size=chunk_size):
+                            count_ch += 1
+                            package.write(chunk)
+                            size += len(chunk)
+                            tmp = (f"已下载 {st.scientific_notate(size, custom_seq=rate_list, rate=1024)}/"
+                                   f"{st.scientific_notate(content_size, custom_seq=rate_list, rate=1024)}")
+                            if not silent:
+                                dl_bar.config(value=size)
+                                label.config(text=tmp)
+                                root.update()
+                                # root.update_idletasks()
+                            else:
+                                if count_ch % 10 == 0:
+                                    record_fx(tmp)
+
+                    exec_bak = get_exec() + ".old"
+                    if exists(exec_bak):
+                        remove(exec_bak)
+                    rename(get_exec(), exec_bak)
+                    rename(get_exec() + ".tmp", get_exec())
+                else:
+                    record_fx("下载错误！", response.status_code)
+                tmp = "更新完成，用时%.1fs\n请重启 %s" % (time.time() - start_t, TITLE)
+                if not silent:
+                    dl_bar.forget()
+                    msgbox.showinfo("更新完成", tmp, parent=root)
+                else:
+                    record_fx(tmp)
+
+        if parent is None:
+            parent = self
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, '
+                          'like Gecko) Chrome/107.0.0.0 Safari/537.36',
+            # 'Connection': 'close'  # 不使用持久连接
+        }
+        # response = get(url, stream=True)
+        response = get(r'https://raw.githubusercontent.com/8388688/SyncCraft/main/version.json',
+                       headers=headers)
+        response_json = response.json()
+        up_content: dict = response_json["updates"]
+        size = 0
+        start_t = time.time()
+        chunk_size = 16384  # 每次下载的数据大小
+        content_size = int(response.headers.get("content-length", -1))
+        updatable = up_data[0]
+
+        # current_date = mktime(strptime("", "%Y-%m-%d"))
+        tmp = ""
+        buildTime = up_data[1]
+        for i in up_content.keys():
+            if up_content[i]["build_time"] > buildTime:
+                updatable = i
+                buildTime = up_content[i]["build_time"]
+                # current_date = response_json[i]["date"]
+                tmp = f"更新内容：\n{up_content[i]["content"]}"
+
+        if updatable == up_data[0]:
+            record_fx("暂无更新")
+            if not silent:
+                msgbox.showinfo("检查更新", "暂无更新", parent=parent)
+        else:
+            if not silent:
+                root = tk.Toplevel(self)
+                self.global_window_initialize(root, "有新的更新")
+                up_content_text = tk.Text(root, width=60, height=18, undo=False, bd=3)
+                up_content_text.grid(row=1, column=0, columnspan=3, padx=10, pady=5)
+                tk.Label(root, text=f"{TITLE} 有新版本可用！", bd=3, relief=GROOVE, width=60, height=1).grid(
+                    row=0, column=0, columnspan=3, padx=10, pady=10)
+                dl_bar = ttk.Progressbar(root, length=400, cursor="spider", mode="indeterminate", maximum=content_size)
+                ttk.Label(root, text=f"正在将 {TITLE} 从 {__version__} 更新至 {updatable} 版本").grid(
+                    row=2, column=0, columnspan=2, padx=10, pady=5)
+                label = ttk.Label(root, text="")
+                label.grid(row=2, column=2, padx=10, pady=5)
+                down_btn = ttk.Button(root, width=10, text="Download!", style=self.BUTTON_STYLE_USE, command=update_api)
+                down_btn.grid(row=4, column=0, padx=10, pady=5)
+                ttk.Button(root, width=10, text="Cancel", style=self.BUTTON_STYLE_USE,
+                           command=lambda: self.global_window_destroyed(root, "有新的更新")).grid(
+                    row=4, column=2, padx=10, pady=5)
+                up_content_text.insert(END, tmp)
+                up_content_text.config(state=DISABLED)
+                root.update()
+            else:
+                record_fx(f"正在将 {TITLE} 从 {__version__} 更新至 {updatable} 版本")
+                update_api()
 
     def template_conf_put(self):
         local_title = "编辑设置"
@@ -162,10 +309,10 @@ class ShadowCraft(Pk_Stray):
                 self.conf_config = pk.loads(text.get(1.0, END))
                 self.extract_config()
                 # self.upgrade_config()
-            except JSONDecodeError:
-                showinfo(local_title, "json 格式错误！", parent=win)
+            except json.decoder.JSONDecodeError:
+                msgbox.showinfo(local_title, "json 格式错误！", parent=win)
             else:
-                showinfo(local_title, "已保存", parent=win)
+                msgbox.showinfo(local_title, "已保存", parent=win)
                 self.global_window_destroyed(win, local_title)
 
         win = tk.Toplevel(self)
@@ -178,7 +325,7 @@ class ShadowCraft(Pk_Stray):
         text.delete(1.0, END)
         text.insert(1.0, pk.dumps(self.conf_config))
         text.grid(row=1, column=0, columnspan=3, sticky=E, padx=1, pady=self.GLOBAL_PADY)
-        scroll_bar.grid(row=1, column=3, sticky=W, ipady=95, padx=1, pady=self.GLOBAL_PADY)
+        scroll_bar.grid(row=1, column=3, sticky=W, ipady=120, padx=1, pady=self.GLOBAL_PADY)
         tk.Label(win, text=f"更改这些配置可能会使{self.TITLE}停止工作", width=80, height=2,
                  fg="red", bd=3, relief=GROOVE).grid(  # font=("Arial", 10)
             row=0, column=0, columnspan=4, padx=self.GLOBAL_PADY, pady=self.GLOBAL_PADY)
@@ -202,7 +349,7 @@ class ShadowCraft(Pk_Stray):
 
         def api_add():
             src_ = src_ui.get()
-            dst_ = (dst_ui.get() if isabs(dst_ui.get()) else pk.join(self.SYNC_ROOT_FP, dst_ui.get()))
+            dst_ = (dst_ui.get() if isabs(dst_ui.get()) else join(self.SYNC_ROOT_FP, dst_ui.get()))
             # if label_var.get() == "solid":
             #     self.solids.append([src_, dst_])
             # else:
@@ -210,7 +357,7 @@ class ShadowCraft(Pk_Stray):
             self.cursors.update(
                 {src_: {"dst": dst_, "type": reflecting[label_var.get()], "lastrun": "", "archives": []}})
             self.update_cursor()
-            showinfo("添加同步目录", f"{src_} <===> {dst_}\n已成功添加", parent=win)
+            msgbox.showinfo("添加同步目录", f"{src_} <===> {dst_}\n已成功添加", parent=win)
             src_ui.delete(0, END)
             dst_ui.delete(0, END)
             self.global_window_destroyed(win, local_title)
@@ -288,32 +435,207 @@ class ShadowCraft(Pk_Stray):
         ttk.Button(win, text="Delete!", style=self.BUTTON_STYLE_USE, command=api_del, width=width).grid(
             row=3, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
-    def gs_settings(self):
-        def forget_all():
-            gs_frame.grid_forget()
+    def gui_run(self):
+        local_title = "运行"
+        length = 100
+        speed = 15  # 这个数值越小，滚动得越快
+        pause_flag = tk.BooleanVar()
+        pause_flag.set(False)
 
+        def show_():
+            self.record_fx("继续同步")
+            run_times_entry.config(state=DISABLED)
+            delay_entry.config(state=DISABLED)
+            progress_win.config(state=DISABLED)
+            windowed_win.config(state=DISABLED)
+            btn1.config(text="暂停", state=NORMAL, command=lambda: pause_btn())
+            btn1.rowconfigure(4)
+            btn2.config(text="终止", state=NORMAL, command=self.KEY_BOARD["terminated_sync"][3])
+            btn2.rowconfigure(4)
+
+            progress2.grid(row=3, column=0, columnspan=100, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+
+        def pause_btn(pause_flag_set=None):
+            if pause_flag_set is None:
+                pfs = not pause_flag.get()
+            else:
+                pfs = pause_flag_set
+            pause_flag.set(pfs)
+            if pfs:
+                btn1.config(text="继续", command=lambda: pause_btn())
+                progress2.stop()
+            else:
+                btn1.config(text="暂停", command=lambda: pause_btn())
+                progress2.start()
+
+        def hide_():
+            self.record_fx("暂停或中止同步")
+            run_times_entry.config(state=NORMAL)
+            delay_entry.config(state=NORMAL)
+            progress_win.config(state=NORMAL)
+            windowed_win.config(state=NORMAL)
+            btn1.config(text="继续", state=NORMAL, command=lambda: warn(windowed_var.get()))
+            btn1.rowconfigure(3)
+            btn2.config(text="退出", command=lambda: self.global_window_destroyed(win, "运行"), state=NORMAL)
+            btn2.rowconfigure(3)
+            progress2.grid_forget()
+
+        def pause():
+            while self.sync_flag and pause_flag.get():
+                time.sleep(0.3)
+
+        def run_register():
+            pause_th = threading.Thread(target=pause, daemon=True)
+            pause_th.start()
+
+            for i in self.run_until_gen(run_times_var.get(), delay=delay_var.get()):
+                # self.record_fx(i)
+                if pause_flag.get():
+                    pause()
+
+            # ↓ thread.start() 之后的程序，即线程退出后应该运行的程序。
+            self.shut()
+            self.record_fx("gui_run 命令成功完成")
+            progress2.stop()
+            hide_()
+
+        def warn(confirm=True):
+
+            def join_sync():
+                join_th = threading.Thread(target=self.wait_fx, kwargs=dict(seconds=0.2, ), )
+
+            if confirm and not msgbox.askokcancel(
+                    "开始运行", "程序一旦开始，在终止之前不可中断\n你确定要开始运行吗", parent=win):
+                self.record_fx("gui_run 操作取消")
+            else:
+                self.conf_config["userdata"]["history"].update(
+                    {"run_times_ch": run_times_var.get(), "run_delay_ch": delay_var.get()})
+                if not (progress_var.get() or windowed_var.get()):
+                    show_()
+                    progress2.start(speed)
+                else:
+                    self.global_window_destroyed(win, local_title)
+                if windowed_var.get():
+                    self.gui_destroy(save=False)
+                sync_th = threading.Thread(target=run_register)
+                sync_th.start()
+                # sync_th.join() # 阻塞主线程、直到子线程终结
+
+        win = tk.Toplevel(self)
+        self.global_window_initialize(win, title=local_title)
+
+        run_times_var = tk.IntVar()
+        run_times_var.set(self.user_history.get("run_times_ch", 0))
+        delay_var = tk.DoubleVar()
+        delay_var.set(self.user_history.get("run_delay_ch", 0.0))
+        windowed_var = tk.BooleanVar()
+        progress_var = tk.BooleanVar()
+        run_times_entry = self.get_digit_entry(win, ttk.Spinbox, from_=0, to=100, textvariable=run_times_var, width=30)
+        delay_entry = self.get_digit_entry(win, ttk.Spinbox, from_=0, to=10, textvariable=delay_var, increment=0.1,
+                                           width=30)
+        run_times_entry.grid(row=0, column=0, columnspan=2, padx=self.GLOBAL_PADX,
+                             pady=self.GLOBAL_PADY)
+        delay_entry.grid(row=1, column=0, columnspan=2, padx=self.GLOBAL_PADX,
+                         pady=self.GLOBAL_PADY)
+        progress_win = ttk.Checkbutton(win, text="销毁此窗口", variable=progress_var)
+        progress_win.grid(row=2, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        windowed_win = ttk.Checkbutton(win, text="销毁主窗口", variable=windowed_var)
+        windowed_win.grid(row=2, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        progress2 = ttk.Progressbar(win, mode="indeterminate", length=225, )
+        btn1 = ttk.Button(win, style=self.BUTTON_STYLE_USE, width=8)
+        btn1.grid(row=4, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        btn2 = ttk.Button(win, style=self.BUTTON_STYLE_USE, width=8)
+        btn2.grid(row=4, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        hide_()
+        btn1.config(text="运行")
+
+    def gui_unlock(self, unlock_pre=True, del_=False, untie=True, read=False):
+        def api_unlock():
+            if sp.size() > 0:
+                sp_process = sp.selection_get().split("\n")
+                self.unlock_arc(sp_process, unlock_pre=unlock_pre, delete=del_, untie=untie)
+                if read:
+                    # if unlock_pre * 4 + del_ * 2 + untie * 1 == 1:
+                    for i in sp_process:
+                        startfile(i)
+            refresh0()
+            sp.select_clear(0)
+
+        def refresh0():
+            sp.delete(0, END)
+            for i in self.cursors.values():
+                for j in i.get("archives", []):
+                    sp.insert(END, j)
+            for i in self.synced_archives:
+                sp.insert(END, i)
+
+        win = tk.Toplevel(self)
+        self.global_window_initialize(win, title="解锁")
+        sp = tk.Listbox(win, selectmode=EXTENDED, width=40, height=16)
+        sb = ttk.Scrollbar(win, command=sp.yview)
+        sp.config(yscrollcommand=sb.set)
+        # TODO: 双击窗口的某一项时，触发解锁命令
+        refresh0()
+        sp.bind("<Double-1>", lambda x: api_unlock())
+        sp.grid(row=0, column=0, padx=1, pady=self.GLOBAL_PADY)
+        sb.grid(row=0, column=1, ipady=120, padx=1, pady=self.GLOBAL_PADY)
+        ttk.Button(win, text="立即解锁！", style=self.BUTTON_STYLE_USE, command=api_unlock, width=20).grid(
+            row=1, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+
+    def gs_settings(self):
         win = tk.Toplevel()
         self.global_window_initialize(win, "全局设置")
         autoupdate_rainbow = {"未配置（每次都询问）": None, "已启用": True, "已禁用": False}
         gs_frame = ttk.Labelframe(win, text="全局设置")
 
+        gs_conf = get_conf()
+        silent_update = tk.BooleanVar()
+        print(silent_update.get())
+
         def save():
             #####################################################
-            ret = get_conf()
-            ret.update({"autoUpdate": autoupdate_rainbow[update_combobox.get()]})
-            put_conf(ret)
+            nonlocal gs_conf
+            gs_conf.update({
+                "autoUpdate": autoupdate_rainbow[update_combobox.get()],
+            })
+            put_conf(gs_conf)
             #####################################################
 
         tip_f = ttk.Label(gs_frame, text="启动时检查更新")
+        check_for_updates_btn = ttk.Button(
+            gs_frame, text=self.KEY_BOARD["check_for_updates"][2],
+            style=self.BUTTON_STYLE_USE, command=self.KEY_BOARD["check_for_updates"][3])
+        check_for_updates_chbtn = ttk.Checkbutton(gs_frame, text="静默更新", variable=silent_update)
         update_combobox = ttk.Combobox(gs_frame, state="readonly", values=tuple(autoupdate_rainbow.keys()))
+        del_all_path_btn = ttk.Button(
+            gs_frame, width=15, text="清理当前路径", style=self.BUTTON_STYLE_USE,
+            command=lambda: self.join_cmdline(
+                gs_conf["archives"].remove(self.SYNC_ROOT_FP)
+                if gs_conf.get("archives", []) and self.SYNC_ROOT_FP in gs_conf
+                else st.pass_,
+                fix_conf(del_invalid_path=False, fix_entry=del_invalid_path_combobox))
+        )
+        del_invalid_path_combobox = ttk.Combobox(
+            gs_frame, state="readonly", width=55, values=gs_conf.get("archives", []))
+
         ok_button = ttk.Button(win, text="ok.", style=self.BUTTON_STYLE_USE, command=lambda: self.join_cmdline(
             save, lambda: self.global_window_destroyed(win, "全局设置")))
 
         update_combobox.set(update_combobox["values"][0])
+        for i in autoupdate_rainbow.keys():
+            if autoupdate_rainbow[i] == gs_config.get("autoUpdate", None):
+                update_combobox.set(i)
+        silent_update.set(gs_conf.get("silent_update", True))
+        print(silent_update.get())
+        del_invalid_path_combobox.set(self.SYNC_ROOT_FP)
 
-        gs_frame.grid(row=0, column=0)
-        tip_f.grid(row=0, column=1, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        update_combobox.grid(row=0, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        gs_frame.grid(row=0, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        tip_f.grid(row=0, column=0, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        check_for_updates_btn.grid(row=1, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        check_for_updates_chbtn.grid(row=0, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        update_combobox.grid(row=0, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        del_all_path_btn.grid(row=3, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        del_invalid_path_combobox.grid(row=2, column=0, columnspan=3, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         ok_button.grid(row=30, column=0, columnspan=30, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
     def gui_settings(self):
@@ -340,7 +662,7 @@ class ShadowCraft(Pk_Stray):
             tmp_value = bw_list.get(1.0, END).strip("\n").split("\n")
             self.profileSettings.update({tmp_key: tmp_value})
             if msg:
-                showinfo("保存", f"已保存 {tmp_key} 的 {len(tmp_value)} 个值", parent=win)
+                msgbox.showinfo("保存", f"已保存 {tmp_key} 的 {len(tmp_value)} 个值", parent=win)
 
         def save_save():
             self.reserved_size = int(size_box.get()) * 1024 ** rate_list.index(rate_combobox.get())
@@ -387,7 +709,7 @@ class ShadowCraft(Pk_Stray):
         busy_loop_chbtn = ttk.Checkbutton(misc_frame, text="使用 busy_loop 时间等待", variable=busy_loop_var, width=20)
         size_box = self.get_side2side_entry(
             syncFactor_frame, ttk.Spinbox, max_=1024, from_=0, to=1024 - 1, width=20, increment=1)
-        rate_combobox = ttk.Combobox(syncFactor_frame, values=rate_list, width=4)
+        rate_combobox = ttk.Combobox(syncFactor_frame, values=rate_list, width=6)
         style_combobox = ttk.Combobox(view_frame, values=self.global_style.theme_names(), width=20)
         log_scroll_chbtn = ttk.Checkbutton(view_frame, text="自动滚屏", variable=self.log_scroll2end)
         bw_list = tk.Text(syncFactor_frame, width=80, height=24, wrap=WORD)
@@ -468,7 +790,9 @@ class ShadowCraft(Pk_Stray):
         upgrade_bw_box()
 
     def gui_main(self):
-        def topmost_en_de(en_de):
+        dir_self = dir(self)
+
+        def topmost_en_de(en_de: bool):
             view_menu.entryconfig("窗口置顶", state=DISABLED if en_de else NORMAL)
             view_menu.entryconfig(self.KEY_BOARD["minify"][2], state=DISABLED if en_de else NORMAL)
             self.refresh()
@@ -489,21 +813,21 @@ class ShadowCraft(Pk_Stray):
             ask_ = asksaveasfilename(
                 title="导出日志...", filetypes=(("日志文件", "*.log"), ("所有类型的文件", "*")),
                 initialdir=self.SYNC_ROOT_FP,
-                initialfile=f"日志导出_{pk.strftime('%Y_%m_%d_%H_%M_%S', pk.localtime(pk.time()))}.log")
+                initialfile=f"日志导出_{time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime(time.time()))}.log")
             if ask_ is not None and ask_:
                 self.record_fx(f"导出日志. . .")
                 with open(ask_, "w") as file:
                     file.write("".join(self.log_list))
-                showinfo("导出日志文件", f"日志文件已导出为 {ask_}")
+                msgbox.showinfo("导出日志文件", f"日志文件已导出为 {ask_}")
                 self.record_fx(f"日志文件已导出为 {ask_}")
             else:
                 self.record_fx(f"{export_simplog.__name__} 操作已取消")
 
         def join_useless():
             self.upgrade_exclude_dir()
-            for j in pk.listdir(self.SYNC_ROOT_FP):
-                tmp_fp = pk.join(self.SYNC_ROOT_FP, j)
-                if pk.isdir(tmp_fp):
+            for j in listdir(self.SYNC_ROOT_FP):
+                tmp_fp = join(self.SYNC_ROOT_FP, j)
+                if isdir(tmp_fp):
                     if tmp_fp not in self.exclude_in_del:
                         self.record_fx(f"添加文件夹 - {tmp_fp}")
                         self.synced_archives.append(tmp_fp)
@@ -516,7 +840,8 @@ class ShadowCraft(Pk_Stray):
             selected = self.log_box.tag_ranges(SEL)
             if selected:
                 rightClick_menu.entryconfig(
-                    "复制", state=NORMAL, command=pyperclip.copy(self.log_box.get(selected[0], selected[1])))
+                    "复制", state=NORMAL,
+                    command=self.clipboard_append(self.log_box.get(selected[0], selected[1])))
             else:
                 rightClick_menu.entryconfig("复制", state=DISABLED)
             rightClick_menu.post(x, y)
@@ -543,7 +868,6 @@ class ShadowCraft(Pk_Stray):
         edit_menu = tk.Menu(self.menu_bar, tearoff=False)
         tool_menu = tk.Menu(self.menu_bar, tearoff=False)
         help_menu = tk.Menu(self.menu_bar, tearoff=False)
-        permission_menu = tk.Menu(self.menu_bar, tearoff=False)
         saving_menu = tk.Menu(self.menu_bar, tearoff=False)
         arc_menu = tk.Menu(self.menu_bar, tearoff=False)
         presets_menu = tk.Menu(self.menu_bar, tearoff=False)
@@ -551,19 +875,23 @@ class ShadowCraft(Pk_Stray):
         senior_setting_menu = tk.Menu(self.menu_bar, tearoff=False)
         lab_menu = tk.Menu(self.menu_bar, tearoff=False)
         treasure_menu = tk.Menu(self.menu_bar, tearoff=True)
+        danger_menu = tk.Menu(self.menu_bar, tearoff=False)
 
         rightClick_menu = tk.Menu(self.menu_bar, tearoff=False)
 
         self.menu_bar.add_cascade(label="同步", menu=sync_menu)
         self.menu_bar.add_cascade(label="编辑", menu=edit_menu)
-        self.menu_bar.add_cascade(label="工具", menu=tool_menu)
         self.menu_bar.add_cascade(label="视图", menu=view_menu)
+        self.menu_bar.add_cascade(label="工具", menu=tool_menu)
         self.menu_bar.add_cascade(label="帮助", menu=help_menu)
 
         sync_menu.add_command(label="打开同步根目录", command=lambda: startfile(self.SYNC_ROOT_FP))
         sync_menu.add_command(label="打开终端", command=lambda: startfile(environ["COMSPEC"]))
         sync_menu.add_command(label=self.KEY_BOARD["run"][2], command=self.KEY_BOARD["run"][3],
                               accelerator=self.KEY_BOARD["run"][1])
+        sync_menu.add_command(label=self.KEY_BOARD["terminated_sync"][2], command=self.KEY_BOARD["terminated_sync"][3],
+                              accelerator=self.KEY_BOARD["terminated_sync"][1])
+        sync_menu.add_separator()
         sync_menu.add_cascade(label="读写", menu=saving_menu)
         saving_menu.add_command(label=self.KEY_BOARD["save"][2], command=self.KEY_BOARD["save"][3],
                                 accelerator=self.KEY_BOARD["save"][1])
@@ -588,41 +916,47 @@ class ShadowCraft(Pk_Stray):
                               accelerator=self.KEY_BOARD["settings"][1])
         tool_menu.add_command(label=self.KEY_BOARD["gs_settings"][2], command=self.KEY_BOARD["gs_settings"][3],
                               accelerator=self.KEY_BOARD["gs_settings"][1])
-
         tool_menu.add_separator()
-        tool_menu.add_command(label="检查已绑定的按键", command=self.gui_key_view)
+        tool_menu.add_command(label="检查已绑定的按键",
+                              command=lambda: self.gui_key_view(self.KEY_BOARD, key_=lambda x: str(x)))
+        tool_menu.add_command(label="检查 conf_config 变量", command=lambda: self.gui_key_view(self.conf_config))
+        tool_menu.add_command(label="检查 SyncCraft 变量", command=lambda: self.gui_key_view(dir_self))
         tool_menu.add_command(label="清除历史记录", command=lambda: self.gui_clear_list(
             self.user_history, "清除历史记录. . . 完成！"))
         tool_menu.add_command(label=self.KEY_BOARD["reset_warnings"][2], command=self.KEY_BOARD["reset_warnings"][3],
                               accelerator=self.KEY_BOARD["reset_warnings"][1])
-        tool_menu.add_cascade(label="权限", menu=permission_menu)
+        tool_menu.add_separator()
+        tool_menu.add_command(label=self.KEY_BOARD["check_admin"][2], command=self.KEY_BOARD["check_admin"][3],
+                              accelerator=self.KEY_BOARD["check_admin"][1])
+        tool_menu.add_checkbutton(label=self.KEY_BOARD["take_admin"][2], command=self.KEY_BOARD["take_admin"][3],
+                                  variable=self.at_admin_var, accelerator=self.KEY_BOARD["take_admin"][1])
+        tool_menu.add_separator()
         tool_menu.add_cascade(label="高级设置", menu=senior_setting_menu)
-        senior_setting_menu.bind("<Motion>", lambda x: showinfo(
-            "高级设置", "仅限高级用户", icon="warning"))
+        senior_setting_menu.bind(
+            "<Motion>", lambda x: msgbox.showwarning("高级设置", "仅限高级用户"))
         senior_setting_menu.add_command(
             label=self.KEY_BOARD["shut"][2], command=self.KEY_BOARD["shut"][3], accelerator=self.KEY_BOARD["shut"][1])
-        senior_setting_menu.add_command(
-            label=self.KEY_BOARD["terminated_sync"][2], command=self.KEY_BOARD["terminated_sync"][3],
-            accelerator=self.KEY_BOARD["terminated_sync"][1])
         senior_setting_menu.add_command(
             label=self.KEY_BOARD["check_for_fakeupdate"][2], command=self.KEY_BOARD["check_for_fakeupdate"][3],
             accelerator=self.KEY_BOARD["check_for_fakeupdate"][1])
         senior_setting_menu.add_command(label="Upgrade Config", command=lambda: self.upgrade_config())
         senior_setting_menu.add_command(label="Extract Config", command=lambda: self.extract_config())
-        senior_setting_menu.add_command(label="快速锁定该目录[此操作在退出后不可逆]",
-                                        command=lambda: self.preserve(self.SYNC_ROOT_FP, True, True),
-                                        foreground="red", activebackground="red")
-        senior_setting_menu.add_command(
-            label="解锁该目录", command=lambda: self.preserve(self.SYNC_ROOT_FP, None, False))
         senior_setting_menu.add_cascade(label="额外高级设置", menu=lab_menu)
-        senior_setting_menu.add_command(label="删除此实例", command=self.gui_logout, foreground="red",
-                                        activebackground="red")
-        senior_setting_menu.add_command(
+        senior_setting_menu.add_cascade(label="Danger Zone", menu=danger_menu, foreground="red", activebackground="red")
+        danger_menu.add_command(
+            label="快速锁定该目录[此操作在退出后不可逆]", foreground="red", activebackground="red",
+            command=lambda: self.preserve(self.SYNC_ROOT_FP, True, True))
+        danger_menu.add_command(
+            label="解锁该目录", command=lambda: self.preserve(self.SYNC_ROOT_FP, None, False))
+        danger_menu.add_command(label="重置当前配置信息", command=self.clear_config)
+        danger_menu.add_command(
+            label="删除此实例", command=self.gui_logout, foreground="red", activebackground="red")
+        danger_menu.add_command(
             label="[Extremely]快速删除此实例",
             command=lambda: self.logout(arc_mode=1, del_log=True, del_conf=True, del_subfile=True),
             foreground="#AA0000", activebackground="#AA0000")
-        lab_menu.bind("<Enter>", lambda x: showinfo(
-            "警告", "除非你已经完全明白这些功能的用途，否则请使之保持默认值", icon="warning"))
+        lab_menu.bind("<Enter>", lambda x: msgbox.showwarning(
+            "警告", "除非你已经完全明白这些功能的用途，否则请使之保持默认值"))
         lab_menu.add_command(label="py执行任意命令",
                              command=lambda: self.template_sysTerminal(exec, False, strip=True))
         lab_menu.add_command(label="终端执行任意命令(system)", command=lambda: self.template_sysTerminal(
@@ -630,7 +964,6 @@ class ShadowCraft(Pk_Stray):
         lab_menu.add_command(label="终端执行任意命令(popen)", command=lambda: self.template_sysTerminal(
             p_popen, True, strip=True))
         lab_menu.add_command(label="编辑配置文件", command=self.template_conf_put)
-        lab_menu.add_command(label="重置当前配置信息", command=self.clear_config)
         arc_menu.add_command(label=self.KEY_BOARD["read_arc"][2], command=self.KEY_BOARD["read_arc"][3],
                              accelerator=self.KEY_BOARD["read_arc"][1])
         arc_menu.add_command(label=self.KEY_BOARD["unlock_arc_r"][2], command=self.KEY_BOARD["unlock_arc_r"][3],
@@ -647,10 +980,6 @@ class ShadowCraft(Pk_Stray):
                              accelerator=self.KEY_BOARD["deleteall_arc"][1], activebackground="red", foreground="red")
         arc_menu.add_command(label=self.KEY_BOARD["untieall_arc"][2], command=self.KEY_BOARD["untieall_arc"][3],
                              accelerator=self.KEY_BOARD["untieall_arc"][1], activebackground="red", foreground="red")
-        permission_menu.add_command(label=self.KEY_BOARD["check_admin"][2], command=self.KEY_BOARD["check_admin"][3],
-                                    accelerator=self.KEY_BOARD["check_admin"][1])
-        permission_menu.add_checkbutton(label=self.KEY_BOARD["take_admin"][2], command=self.KEY_BOARD["take_admin"][3],
-                                        variable=self.at_admin_var, accelerator=self.KEY_BOARD["take_admin"][1])
         edit_menu.add_command(label=self.KEY_BOARD["add_dir"][2], command=self.KEY_BOARD["add_dir"][3],
                               accelerator=self.KEY_BOARD["add_dir"][1])
         edit_menu.add_command(label=self.KEY_BOARD["del_dir"][2], command=self.KEY_BOARD["del_dir"][3],
@@ -676,29 +1005,29 @@ class ShadowCraft(Pk_Stray):
         help_menu.add_command(
             label=self.KEY_BOARD["help"][2], command=self.KEY_BOARD["help"][3], accelerator=self.KEY_BOARD["help"][1])
         help_menu.add_command(
-            label=self.KEY_BOARD["check_for_update"][2], command=self.KEY_BOARD["check_for_update"][3],
-            accelerator=self.KEY_BOARD["check_for_update"][1])
+            label=self.KEY_BOARD["check_for_updates"][2], command=self.KEY_BOARD["check_for_updates"][3],
+            accelerator=self.KEY_BOARD["check_for_updates"][1])
         help_menu.add_separator()
         help_menu.add_cascade(
             label="百宝箱", menu=treasure_menu, activebackground=choice(self.COLOR), foreground=choice(self.COLOR))
         treasure_menu.add_command(
             label="今日人品", command=self.tr_today, activebackground="purple", foreground="purple")
         treasure_menu.add_command(label="临时文本框", command=lambda: self.template_sysTerminal(
-            pass_, False, "temporary_text", show_ter_warning=False), activebackground="pink", foreground="pink")
+            st.pass_, False, "temporary_text", show_ter_warning=False), activebackground="pink", foreground="pink")
         treasure_menu.add_command(
             label="弹出消息框", command=self.tr_msgbox, activebackground="blue", foreground="blue")
         treasure_menu.add_command(
             label="帮我选择", command=self.tr_choose, activebackground="cyan", foreground="cyan")
         treasure_menu.add_command(label="md5值计算", command=lambda: self.template_sysTerminal(
-            lambda x: showinfo("md5生成", "md5值为：\n" + pk.get_md5(x)), False, "md5sum",
+            lambda x: msgbox.showinfo("md5生成", "md5值为：\n" + pk.get_md5(x)), False, "md5sum",
             # initialvalue="Type the string you want to calculate. . .",
             show_ter_warning=False), activebackground="green", foreground="green")
         treasure_menu.add_command(
             label="随机ABCD选项生成（1次）", activebackground="gold", foreground="gold",
-            command=lambda: showinfo("随机选项生成", f"生成的随机选项：{choice(['A', 'B', 'C', 'D'])}"))
+            command=lambda: msgbox.showinfo("随机选项生成", f"生成的随机选项：{choice(['A', 'B', 'C', 'D'])}"))
         treasure_menu.add_command(
             label="随机ABCD选项生成（10次）", activebackground="orange", foreground="orange",
-            command=lambda: showinfo("随机选项生成", f"生成的随机选项：{list2str([choice(
+            command=lambda: msgbox.showinfo("随机选项生成", f"生成的随机选项：{st.list2str([choice(
                 ['A', 'B', 'C', 'D']) for _ in range(10)], sep=',')}"))
         treasure_menu.add_separator()
         treasure_menu.add_command(
@@ -706,7 +1035,7 @@ class ShadowCraft(Pk_Stray):
                 count=-1, show_warning=True, fallen_step5=2, change_color=not bool(randint(0, 4))))
 
         rightClick_menubar = (
-            dict(label="复制", state=DISABLED, command=pass_),
+            dict(label="复制", state=DISABLED, command=st.pass_),
             dict(label="导出日志文件", command=export_simplog),
         )
         for menu in rightClick_menubar:
@@ -740,8 +1069,8 @@ class ShadowCraft(Pk_Stray):
         self.update()
 
 
-if __name__ == '__main__':
-    gs_config = get_conf()
+if __name__ == "__main__":
+    gs_config: dict = get_conf()
     fix_conf(del_invalid_path=False)
 
     debug = "/debug" in argv
@@ -770,7 +1099,7 @@ if __name__ == '__main__':
     else:
         index_ = -1
     if len(argv) > 1 and (
-            build or (pk.isdir(argv[index_]) or askokcancel(str(argv[index_]), "指定的文件夹不存在\n是否创建"))):
+            build or (pk.isdir(argv[index_]) or msgbox.askokcancel(str(argv[index_]), "指定的文件夹不存在\n是否创建"))):
         # print(argv[index_])
         profile = (True, argv[index_])
     else:
@@ -780,7 +1109,7 @@ if __name__ == '__main__':
 
     start_time = [pk.time(), ]
     if not no_gui:
-        g2c2 = ShadowCraft(profile[1])
+        g2c2 = SyncCraft(profile[1])
         g2c2.setup()
         g2c2.shut()
         g2c2.refresh()
@@ -795,8 +1124,8 @@ if __name__ == '__main__':
 
     if debug:
         # g2c2.record_fx(f"警告：你正在使用 sxj 提供的测试版本, {pk.__version__=}")
-        g2c2.record_fx(f"警告：你正在使用测试版本, {pk.__version__=}")
-        showinfo("", f"警告：你正在使用测试版本, {pk.__version__=}")
+        g2c2.record_fx(f"警告：你正在使用测试版本, {pk.__version__=}", tag=g2c2.LOG_DEBUG)
+        msgbox.showinfo("", f"警告：你正在使用测试版本, {pk.__version__=}")
     if "/forever" in argv:
         if not no_gui:
             g2c2.warn_nowindow(True, False)
