@@ -2,13 +2,12 @@ from __future__ import print_function
 import pywintypes
 import win32api
 import win32file
-import win32process
 import win32security
 import ntsecuritycon
 from builtins import open as fopen
 from json import loads, dumps
 from time import time
-from os import chdir, rename, system, remove, rmdir, getenv, listdir, listmounts, listvolumes
+from os import chdir, rename, system, remove, rmdir, getenv, listdir, listmounts, listvolumes, getcwd
 from os.path import exists, join, isfile, isdir, realpath, abspath, dirname
 from psutil import disk_partitions
 from shutil import copy2, copystat, disk_usage
@@ -20,7 +19,16 @@ import colorama
 
 from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
 from pk_misc import is_admin, __version__, windll, is_exec, TITLE, get_time, get_exec
-from file_op import *
+
+
+def set_volume_label(drive, label):
+    win32file.SetVolumeLabel(drive, label)
+    return label
+
+
+def get_freespace_shutil(folder):
+    _, _, free = disk_usage(folder)
+    return free
 
 
 def safe_open(fp, fx: Callable = loads, invalidDefaultValue="{}", **kwargs) -> dict:
@@ -129,6 +137,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.reserved_size = 0
         self.wait_busy_loop = None
         self.profileSettings = {}
+        self.work_dir = ""
         # 下面这一行才是真正的赋值
         # self.extract_config() <-- 已移入 setup() 函数中
 
@@ -157,8 +166,9 @@ class Peeker:  # TODO: 参考“点名器.py”
             "syncRoot_fp": self.SYNC_ROOT_FP, "cursors": self.cursors,
             "run_beginning": self.run_beginning, "run_completion": self.run_completion,
             "synced_archives": self.synced_archives, "reserved_size": self.reserved_size,
-            "wait_busy_loop": self.wait_busy_loop, "__version__": __version__,
-            "__RunningMode__": self.__class__.__name__
+            "wait_busy_loop": self.wait_busy_loop, "work_dir": self.work_dir,
+
+            "__version__": __version__, "__RunningMode__": self.__class__.__name__
         })
         self.userdata.update({
             "run_times": self.run_times, "last_run_times": self.last_run_times
@@ -214,6 +224,7 @@ class Peeker:  # TODO: 参考“点名器.py”
             "volumeId_whitelist": [], "volumeId_blacklist": [], "label_blacklist": [], "label_whitelist": [],
             "file_blacklist": [], "file_whitelist": []
         })
+        self.work_dir = self.conf_config.get("work_dir", getcwd())
         self.record_fx("Extract Config 已更新")
 
     def save(self, ren: bool = True):
@@ -312,6 +323,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         else:
             self.record_fx(f"运行版本不一致 {__version__} ≠ {tmp_ver}", tag=self.LOG_WARNING)
 
+        chdir(self.work_dir)
         self.get_admin()
 
         # 优先级： 根目录操作 > replace > 固定分配 > 游标同步
@@ -329,6 +341,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.renameall_cur(save=True)
         self.upgrade_exclude_dir()
 
+        self.record_fx(f"当前工作目录: {self.work_dir}")
         self.record_fx(f"setup 函数已执行，version: {__version__}, Time used: %.3fs" % (time() - self.begin_time))
 
     def get_admin(self, take=False, quiet=False):
@@ -347,8 +360,8 @@ class Peeker:  # TODO: 参考“点名器.py”
                 if is_exec():
                     windll.shell32.ShellExecuteW(None, "runas", self.execute_fp, self.SYNC_ROOT_FP, None, 1)
                 else:
-                    windll.shell32.ShellExecuteW(None, "runas", sys_executable,
-                                                 " ".join((self.execute_fp, self.SYNC_ROOT_FP)), None, 1)
+                    windll.shell32.ShellExecuteW(
+                        None, "runas", sys_executable, " ".join((self.execute_fp, self.SYNC_ROOT_FP)), None, 1)
                 sys_exit(0)
             else:
                 return False
@@ -454,8 +467,12 @@ class Peeker:  # TODO: 参考“点名器.py”
             win32file.SetFileAttributes(fname, ace)
 
         if preserve is not None:
-            userx_sid = win32security.LookupAccountName("", "Everyone")[0]
+            """
+            import win32process, win32security
             h = win32process.GetProcessWindowStation()
+            dacl_2 = win32security.GetUserObjectSecurity(h, self.USER_SECURITY_INFO)
+            """
+            userx_sid = win32security.LookupAccountName("", "Everyone")[0]
             sd = win32security.GetNamedSecurityInfo(fname, win32security.SE_FILE_OBJECT,
                                                     win32security.DACL_SECURITY_INFORMATION)
             dacl = sd.GetSecurityDescriptorDacl()
@@ -465,10 +482,12 @@ class Peeker:  # TODO: 参考“点名器.py”
             flag = ntsecuritycon.NO_PROPAGATE_INHERIT_ACE  # 只有此文件夹
             # permission = ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_EXECUTE | ntsecuritycon.FILE_LIST_DIRECTORY | ntsecuritycon.FILE_DELETE_CHILD  # 拒绝读取和执行
             permission = ntsecuritycon.FILE_ALL_ACCESS  # 不给任何权限
-            dacl_2 = win32security.GetUserObjectSecurity(h, self.USER_SECURITY_INFO)
 
             if dacl is not None:
                 if preserve:
+                    # win32security.SetNamedSecurityInfo(
+                    #     fname, win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION,
+                    #     None, None, None, None) # TODO: 撤销一切权限
                     dacl.AddAccessDeniedAceEx(acl_revision, flag, permission, userx_sid)
                 else:
                     # sd.SetAccessRuleProtection(True, False)
@@ -481,13 +500,16 @@ class Peeker:  # TODO: 参考“点名器.py”
                     for item in deleted:
                         dacl.DeleteAce(0)
                     dacl.AddAccessAllowedAceEx(acl_revision, flag, permission, userx_sid)
+                    # dacl.AddAccessAllowedAceEx(
+                    #     win32security.ACL_REVISION_DS,
+                    #     win32security.OBJECT_INHERIT_ACE | win32security.CONTAINER_INHERIT_ACE | win32security.INHERITED_ACE,
+                    #     ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_EXECUTE, userx_sid)
             else:
-                self.record_fx(f"WARNING: {fname} 所在驱动器似乎不支持 NTFS 安全权限", tag=self.LOG_WARNING)
+                self.record_fx(f"{fname} 所在驱动器似乎不支持 NTFS 安全权限", tag=self.LOG_WARNING)
 
             sd.SetSecurityDescriptorDacl(1, dacl, 0)
-            win32security.SetNamedSecurityInfo(fname, win32security.SE_FILE_OBJECT,
-                                               win32security.DACL_SECURITY_INFORMATION,
-                                               None, None, dacl, None)
+            win32security.SetNamedSecurityInfo(
+                fname, win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION, None, None, dacl, None)
 
             self.record_fx("Set SecurityAce: " if preserve
                            else "Delete SecurityAce: " + f"{userx_sid}: {acl_revision, flag, permission}")
@@ -562,7 +584,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         # self.record_fx(f"{cur_exists_list}")
         if cur_exists_list.get("exists", False):
             tmp2 = self.__get_volume_label(file_path)
-            self.record_fx(file_path, "的卷标是", tmp2)
+            self.record_fx(f"[{file_path}] 的卷标是 [{tmp2}]")
         else:
             self.record_fx(f"检查卷标时出现错误 - {file_path} 文件不存在")
             tmp2 = False

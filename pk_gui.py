@@ -3,11 +3,9 @@ from __future__ import print_function
 import re
 import threading
 import tkinter as tk
-from getpass import getuser
 from os import system, startfile, environ, popen, listdir
 from os.path import abspath, isabs, exists, join
 from random import randint, seed, choice, shuffle
-from socket import getfqdn, gethostname
 from sys import argv, stdin, stdout, stderr
 import time
 from tkinter import ttk
@@ -16,6 +14,7 @@ from tkinter.filedialog import asksaveasfilename, askopenfilename
 from tkinter import messagebox as msgbox
 from traceback import format_exc
 from typing import Sequence, Dict, Callable, Set, Optional, SupportsIndex
+from collections.abc import MutableMapping, Mapping
 
 import pk
 from json import dumps, loads
@@ -107,7 +106,7 @@ class PeekerGui(pk.Peeker, Treasure):
     """为主程序提供 GUI 支持
 
 
-    属性:
+    Attributes:
         log_list = []
         user_history = {}
         warnings = {}
@@ -477,9 +476,9 @@ class PeekerGui(pk.Peeker, Treasure):
             self.profileSettings.update({i_: tmp})
             self.record_fx(f"在 {i_} 中移除了 {ch} 个空值")
 
-    def seq_expand_gen(self, seq: Sequence | Dict | Set, key_: Callable = lambda x: x,
+    def seq_expand_gen(self, seq: Sequence | MutableMapping | Set, key_: Callable = lambda x: x,
                        recursion: bool = True, tab: str = "    ", keepends=True, _deep=0) -> tuple[str, int]:
-        if isinstance(seq, Dict):
+        if isinstance(seq, MutableMapping):
             dict_copy = seq
         else:
             if _deep == 0:
@@ -489,7 +488,7 @@ class PeekerGui(pk.Peeker, Treasure):
                 dict_copy.update({i: j})
 
         for i in dict_copy.keys():
-            if isinstance(dict_copy[i], Sequence | Dict | Set) and not isinstance(dict_copy[i], str):
+            if isinstance(dict_copy[i], Sequence | MutableMapping | Set) and not isinstance(dict_copy[i], str):
                 yield str(i) + ":" + ("\n" if keepends else ""), _deep
                 for j in self.seq_expand_gen(dict_copy[i], key_=key_, recursion=recursion, tab=tab, _deep=_deep + 1):
                     yield tab + j[0], j[1]
@@ -513,7 +512,9 @@ class PeekerGui(pk.Peeker, Treasure):
         self.topmost_tm(cls, self.topmost.get(), True)
         if parent is None:
             temp_self = self
+            self.record_fx("parent 为根窗口")
         else:
+            self.record_fx("parent 为子窗口")
             temp_self = parent
         temp_self.bind("<FocusIn>", lambda x: self.topmost_tm(cls, self.topmost.get(), True))
 
@@ -550,7 +551,7 @@ class PeekerGui(pk.Peeker, Treasure):
         if fake:
             msgbox.showerror("Fatal Error!", f"""Traceback (most recent call last):
   File "<stdin>", line 1, in <module>
-PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
+PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
 """)
         self.run_until(figures=figure, end_time=time_, delay=1.0, save=True)
         self.shut()
@@ -696,7 +697,7 @@ PermissionError: [WinError 5] 拒绝访问。: 'C:\\Users\\{getuser()}'
     def tr_today(self):
         today_l = time.localtime(time.time())
         today_s = time.strftime("%Y/%m/%d", today_l)
-        seed(today_s + f"{getfqdn(gethostname())}\\\\{getuser()}")
+        seed(today_s + f"{environ.get('USERDOMAIN')}\\\\{environ.get('USERPROFILE')}")
         today_q = self.TODAY_QUOTE
         today_d = randint(10, 100)
         i = today_q[0]

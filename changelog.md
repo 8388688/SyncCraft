@@ -4,6 +4,16 @@
 
 # 更新历史
 
+## SyncCraft 1.9.1（2025-03-02 发布）
+
+- :fire: Deleted: 移除 `file_op.py`
+- :art: 修改『今日人品』的生成代码
+- :heavy_minus_sign: 移除对 win32process 的依赖
+- :heavy_minus_sign: 移除对 getpass 的依赖
+- :heavy_minus_sign: 移除对 socket 的依赖
+- :bug: 在『编辑配置文件』中，将 disabledWhenSubWindow 将 true 改为 false 时，保存并返回窗口时，会使主窗口再也无法获得响应。
+- :sparkles: 用户可以自定义设置工作目录
+
 ## SyncCraft 1.9.0（2025-03-01 发布）
 
 **破坏性更新**
