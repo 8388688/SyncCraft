@@ -13,6 +13,7 @@
 - :heavy_minus_sign: 移除对 socket 的依赖
 - :bug: 在『编辑配置文件』中，将 disabledWhenSubWindow 将 true 改为 false 时，保存并返回窗口时，会使主窗口再也无法获得响应。
 - :sparkles: 用户可以自定义设置工作目录
+- :wrench: 在线更新加入『gh-pages』打开页面并在更新内容之后紧跟『下载链接』
 
 ## SyncCraft 1.9.0（2025-03-01 发布）
 
