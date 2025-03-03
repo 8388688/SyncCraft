@@ -3,25 +3,26 @@ from __future__ import print_function
 import re
 import threading
 import tkinter as tk
-from os import system, startfile, environ, popen, listdir
-from os.path import abspath, isabs, exists, join
+from collections.abc import MutableMapping
+from json import dumps, loads
+from os import startfile, environ, listdir
+from os.path import exists, join
 from random import randint, seed, choice, shuffle
 from sys import argv, stdin, stdout, stderr
-import time
+from tkinter import messagebox as msgbox
 from tkinter import ttk
 from tkinter.constants import *
 from tkinter.filedialog import asksaveasfilename, askopenfilename
-from tkinter import messagebox as msgbox
 from traceback import format_exc
-from typing import Sequence, Dict, Callable, Set, Optional, SupportsIndex
-from collections.abc import MutableMapping, Mapping
+from typing import Sequence, Callable, Set
+
+import pystray
+import time
+from PIL import Image
 
 import pk
-from json import dumps, loads
-from pk_misc import help_text, TITLE, rate_list
-import pystray
-from PIL import Image
 import simple_tools as st
+from pk_misc import help_text, TITLE, resource_path
 
 
 def get_center(cls: tk.Tk | tk.Toplevel):
@@ -126,11 +127,11 @@ class PeekerGui(pk.Peeker, Treasure):
     GLOBAL_PADX = 10
     GLOBAL_PADY = 5
     TITLE = TITLE
-    ICON_FP = "assets/icon.ico"
-    WARNING_FP = "assets/SecurityAndMaintenance_Alert_Resize.png"
-    ERROR_FP = "assets/SecurityAndMaintenance_Error_Resize.png"
-    INFO_FP = "assets/SecurityAndMaintenance_Resize.png"
-    QUESTION_FP = "assets/grequest.gif"
+    ICON_FP = resource_path("assets/icon.ico")
+    WARNING_FP = resource_path("assets/SecurityAndMaintenance_Alert_Resize.png")
+    ERROR_FP = resource_path("assets/SecurityAndMaintenance_Error_Resize.png")
+    INFO_FP = resource_path("assets/SecurityAndMaintenance_Resize.png")
+    QUESTION_FP = resource_path("assets/grequest.gif")
     LOG_COLORS = {
         pk.Peeker.LOG_INFO: "black",
         pk.Peeker.LOG_WARNING: "#C19C00",

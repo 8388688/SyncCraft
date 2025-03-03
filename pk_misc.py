@@ -1,7 +1,7 @@
 import sys
 from ctypes import windll
 from os import getenv
-from os.path import abspath, join
+from os.path import abspath, join, dirname
 from time import time, localtime, strftime
 
 import simple_tools as st
@@ -32,6 +32,11 @@ def get_freespace_ctypes(folder):
         st = statvfs(folder)
         return st.f_bavail * st.f_frsize / 1024 // 1024
 """
+
+
+def resource_path(relative):
+    return join(dirname(__file__), relative)
+    # return join(environ.get("_MEIPASS2", abspath("")), relative)
 
 
 def is_admin():

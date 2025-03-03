@@ -1,3 +1,4 @@
+# 『』
 import json.decoder
 from http.client import RemoteDisconnected
 from os import chdir, remove, rename, environ
@@ -134,6 +135,12 @@ def global_settings():
 
 
 class SyncCraft(Pk_Stray):
+    """SyncCraft 主程序
+
+    窗口部件中的『添加』『删除』『运行』等代码写在此处
+
+    """
+
     def __init__(self, syncRoot_fp):
         super().__init__(syncRoot_fp)
         if is_exec():
@@ -215,7 +222,7 @@ class SyncCraft(Pk_Stray):
                 return 2
             elif url is None:
                 if not silent:
-                    webbopen("https://github.com/8388688/SyncCraft/releases")
+                    webbopen(response_json["gh-page"])
                 return -2
             elif url:
                 req = safe_connect(url, stream=True)  # 这里需要对 url 更新
