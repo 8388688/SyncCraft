@@ -127,11 +127,14 @@ class PeekerGui(pk.Peeker, Treasure):
     GLOBAL_PADX = 10
     GLOBAL_PADY = 5
     TITLE = TITLE
+    CONF_FILE_TYPES = ((f"{TITLE} 配置文件", "*.sc_conf"), ("json 文件", "*.json"), ("所有类型的文件", '*'))
+
     ICON_FP = resource_path("assets/icon.ico")
     WARNING_FP = resource_path("assets/SecurityAndMaintenance_Alert_Resize.png")
     ERROR_FP = resource_path("assets/SecurityAndMaintenance_Error_Resize.png")
     INFO_FP = resource_path("assets/SecurityAndMaintenance_Resize.png")
     QUESTION_FP = resource_path("assets/grequest.gif")
+
     LOG_COLORS = {
         pk.Peeker.LOG_INFO: "black",
         pk.Peeker.LOG_WARNING: "#C19C00",
@@ -142,8 +145,14 @@ class PeekerGui(pk.Peeker, Treasure):
     debug = False
     COLOR = ("red", "yellow", "green", "blue", "black", "brown", "white", "orange", "purple", "pink")
     TODAY_QUOTE = (
-        (0, "，:("), (20, "，呜……"), (40, "，勉强还行吧……"), (60, "，还好啦，还好啦"), (80, "，今天运气不错呢！"),
-        (90, "!!!"), (100, "！100！100！！！！！"))
+        (0, "，:("),
+        (20, "，呜……"),
+        (40, "，勉强还行吧……"),
+        (60, "，还好啦，还好啦"),
+        (80, "，今天运气不错呢！"),
+        (90, "!!!"),
+        (100, "！100！100！！！！！"),
+    )
     BUTTON_STYLE_USE = "TButton"
     LABEL_STYLE_USE = "TLabel"
     MENU_STYLE_USE = "TMenu"
@@ -249,6 +258,7 @@ class PeekerGui(pk.Peeker, Treasure):
                 self.warnings, "重置所有警告. . . 完成！")),
         }
         self.gui_live = True
+        self.log_scroll2end.set(True)
 
         # 以下的赋值并不重要，具体可参考 Peeker 的  __init__ 函数末尾和 extract_config() 函数
         # null
@@ -365,6 +375,7 @@ class PeekerGui(pk.Peeker, Treasure):
     def refresh(self):
         self.record_fx(
             f"置顶: {self.topmost.get()}，超级置顶: {self.take_focus.get()}，日志自动滚屏: {self.log_scroll2end.get()}")
+        tmp_view = self.log_box.yview()
         if self.take_focus.get():
             self.topmost.set(True)
             self.bind("<FocusOut>", lambda x: self.topmost_tm(self, self.topmost.get(), self.take_focus.get()))
@@ -402,6 +413,10 @@ class PeekerGui(pk.Peeker, Treasure):
 
         if self.log_scroll2end.get():
             self.log_box.see(self.log_insert_mode.get())
+        else:
+            print(tmp_view)
+            self.log_box.see(tmp_view[1])
+            self.log_box.see()
 
     def topmost_tm(self, name, top, focus):
         self.record_fx(f"调用 {self.topmost_tm.__name__} 函数：{name=}, {top=}, {focus=}")
@@ -784,7 +799,7 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
 
     # ---------------------------
     def gui_destroy(self, destroy2=None, slide=False, save=True):
-        self.record_fx(f"{self.gui_destroy.__name__} 销毁窗口")
+        self.record_fx(f"{self.gui_destroy.__name__} 销毁主窗口")
         if destroy2 is None:
             destroy_mode = self.OnQuit.get()
         elif not destroy2:
@@ -935,9 +950,8 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
 
     def gui_export_conf(self):
         ask_fp = asksaveasfilename(
-            title="导出配置文件...", initialdir=self.SYNC_ROOT_FP,
-            initialfile=self.DEFAULT_CONFIG_FNAME, defaultextension=".sc_conf",
-            filetypes=((f"{self.TITLE} 配置文件", "*.sc_conf"), ("json 文件", "*.json"), ("所有类型的文件", '*')))
+            title="导出配置文件...", initialdir=self.SYNC_ROOT_FP, initialfile=self.DEFAULT_CONFIG_FNAME,
+            defaultextension=".sc_conf", filetypes=self.CONF_FILE_TYPES)
         if ask_fp and ask_fp is not None:
             with open(ask_fp, "w", encoding="utf-8") as file:
                 # file.write(temp_text.get())
@@ -947,9 +961,9 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
             self.record_fx(f"导出操作 - 已取消")
 
     def gui_import_conf(self):
-        ask_fp = askopenfilename(title="导入配置文件...", initialdir=self.SYNC_ROOT_FP,
-                                 initialfile=self.DEFAULT_CONFIG_FNAME, defaultextension=".json", filetypes=(
-                ("一般配置文件", "*.json"), (f"{self.TITLE} 配置文件", "*.sc_json"), ("所有类型的文件", '*')))
+        ask_fp = askopenfilename(
+            title="导入配置文件...", initialdir=self.SYNC_ROOT_FP, initialfile=self.DEFAULT_CONFIG_FNAME,
+            defaultextension=".json", filetypes=self.CONF_FILE_TYPES)
         if ask_fp and ask_fp is not None:
             with open(ask_fp, "r", encoding="utf-8") as file:
                 # file.write(temp_text.get())
@@ -1183,13 +1197,13 @@ class Pk_Stray(PeekerGui):
         使用 Pystray 创建系统托盘图标
         """
         menu = (
-            pystray.MenuItem('显示', self.show_window, default=True),
+            pystray.MenuItem("显示", self.show_window, default=True),
             pystray.MenuItem(self.KEY_BOARD["save_arc"][2], self.KEY_BOARD["save_arc"][3]),
             pystray.Menu.SEPARATOR,  # 在系统托盘菜单中添加分隔线
             pystray.MenuItem(self.KEY_BOARD["save_exit"][2], self.KEY_BOARD["save_exit"][3])
         )
         image = Image.open(self.ICON_FP)
-        self.icon = pystray.Icon("icon", image, "图标名称", menu)
+        self.icon = pystray.Icon("icon", image, f"{self.TITLE} - {self.SYNC_ROOT_FP}", menu)
         # self.record_fx("icon.name=", self.icon.name)
         print("icon.name=", self.icon.name)
         threading.Thread(target=self.icon.run, daemon=True).start()
@@ -1204,9 +1218,12 @@ class Pk_Stray(PeekerGui):
         self.deiconify()
 
     def quit_window(self, icon: pystray.Icon):
-        """
-        退出程序
-        """
+        """退出程序"""
         icon.stop()  # 停止 Pystray 的事件循环
         self.quit()  # 终止 Tkinter 的事件循环
         self.destroy()  # 销毁应用程序的主窗口和所有活动
+
+    def gui_destroy(self, destroy2=None, slide=False, save=True):
+        self.icon.visible = False
+        self.icon.stop()
+        super().gui_destroy(destroy2, slide, save)

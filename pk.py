@@ -1,24 +1,26 @@
 from __future__ import print_function
+
+from json import loads, dumps
+from os import chdir, rename, remove, rmdir, getenv, listdir, listmounts, listvolumes, getcwd
+from os.path import exists, join, isfile, isdir, realpath, dirname
+from psutil import disk_partitions
+from shutil import copy2, copystat, disk_usage
+from subprocess import run as command
+from sys import exit as sys_exit, executable as sys_executable
+from traceback import format_exc
+from typing import Literal, Callable, Mapping
+
+import colorama
+import ntsecuritycon
 import pywintypes
 import win32api
 import win32file
 import win32security
-import ntsecuritycon
 from builtins import open as fopen
-from json import loads, dumps
 from time import time
-from os import chdir, rename, system, remove, rmdir, getenv, listdir, listmounts, listvolumes, getcwd
-from os.path import exists, join, isfile, isdir, realpath, abspath, dirname
-from psutil import disk_partitions
-from shutil import copy2, copystat, disk_usage
-from subprocess import run as command
-from sys import exit as sys_exit, executable as sys_executable, version_info
-from traceback import format_exc
-from typing import Any, Literal, LiteralString, Callable
-import colorama
 
-from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
 from pk_misc import is_admin, __version__, windll, is_exec, TITLE, get_time, get_exec
+from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
 
 
 def set_volume_label(drive, label):
@@ -40,6 +42,14 @@ def safe_open(fp, fx: Callable = loads, invalidDefaultValue="{}", **kwargs) -> d
         with fopen(fp, "w", **kwargs) as f:
             f.write(invalidDefaultValue)
         return {}
+
+
+def val2key(seq: Mapping, val, default=None):
+    for item in seq.keys():
+        if seq[item] == val:
+            return item
+    else:
+        return default
 
 
 class Peeker:  # TODO: 参考“点名器.py”
@@ -84,6 +94,22 @@ class Peeker:  # TODO: 参考“点名器.py”
     )
 
     DEFAULT_CONFIG_FNAME = "Sync.sc_conf"
+
+    CURRENT_WORK_DIR_STR = "当前文件夹"
+    CURRENT_PROGRAM_DIR_STR = "当前程序所在文件夹"
+    SYS_TEMP_DIR_STR = "系统临时目录"
+    SYNC_ROOT_DIR_STR = "同步根目录"
+    ISOLATED_TEMP_DIR_STR = "临时目录（隔离）"
+    CUSTOM_DIR_STR = "自定义目录"
+
+    WORK_DIR_TABLET = {
+        CURRENT_WORK_DIR_STR: getcwd(),
+        CURRENT_PROGRAM_DIR_STR: dirname(get_exec()),
+        SYS_TEMP_DIR_STR: getenv("Temp"),
+        SYNC_ROOT_DIR_STR: None,
+        ISOLATED_TEMP_DIR_STR: dirname(__file__),
+        CUSTOM_DIR_STR: None,
+    }
 
     GLOBAL_ROOT_FP = join(getenv("AppData"), TITLE)
     GLOBAL_LOG_DIRP = join(GLOBAL_ROOT_FP, "__Logs__")
@@ -166,7 +192,7 @@ class Peeker:  # TODO: 参考“点名器.py”
             "syncRoot_fp": self.SYNC_ROOT_FP, "cursors": self.cursors,
             "run_beginning": self.run_beginning, "run_completion": self.run_completion,
             "synced_archives": self.synced_archives, "reserved_size": self.reserved_size,
-            "wait_busy_loop": self.wait_busy_loop, "work_dir": self.work_dir,
+            "wait_busy_loop": self.wait_busy_loop, "work_dir": val2key(self.WORK_DIR_TABLET, self.work_dir),
 
             "__version__": __version__, "__RunningMode__": self.__class__.__name__
         })
@@ -224,7 +250,7 @@ class Peeker:  # TODO: 参考“点名器.py”
             "volumeId_whitelist": [], "volumeId_blacklist": [], "label_blacklist": [], "label_whitelist": [],
             "file_blacklist": [], "file_whitelist": []
         })
-        self.work_dir = self.conf_config.get("work_dir", getcwd())
+        self.work_dir = self.WORK_DIR_TABLET.get(self.conf_config["work_dir"], getcwd())
         self.record_fx("Extract Config 已更新")
 
     def save(self, ren: bool = True):
@@ -316,6 +342,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.log_fiet = open(self.log_fp, "a", encoding="utf-8")
         self.conf_config = safe_open(self.conf_fp, loads)
 
+        self.WORK_DIR_TABLET[self.SYNC_ROOT_DIR_STR] = self.SYNC_ROOT_FP
         self.extract_config()
         tmp_ver = self.conf_config.get("__version__", "[Unknown]")
         if __version__ == tmp_ver:

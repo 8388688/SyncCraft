@@ -1,8 +1,9 @@
 # 『』
 import json.decoder
+from collections.abc import Mapping
 from http.client import RemoteDisconnected
-from os import chdir, remove, rename, environ
-from os.path import dirname, normpath, samefile, isdir
+from os import chdir, remove, rename, popen, system
+from os.path import dirname, normpath, samefile, isdir, abspath, isabs
 from tkinter.filedialog import askdirectory
 from webbrowser import open as webbopen
 
@@ -10,7 +11,7 @@ from requests import get as web_get
 from requests.exceptions import ConnectTimeout, ConnectionError as WebConnectionError
 
 from pk_gui import *
-from pk_misc import global_settings_dirp, global_settings_fp, __version__, build_time, get_exec, is_exec
+from pk_misc import global_settings_dirp, global_settings_fp, __version__, build_time, get_exec, is_exec, rate_list
 
 
 # from distutils import *
@@ -35,7 +36,7 @@ def put_conf(conf_json: str | dict):
     return
 
 
-def fix_conf(del_invalid_path=False, fix_entry: ttk.Combobox | tk.Entry | ttk.Entry | None = None):
+def fix_conf(del_invalid_path=False, fix_entry: ttk.Combobox | tk.Entry | ttk.Entry | None = None) -> None:
     global gs_config
     gs_config.update({"archives": gs_config.get("archives", ["D:\\BackDT_sh", ])})
     gs_config.update({"maxArchiveHistory": gs_config.get("maxArchiveHistory", -1)})
@@ -54,6 +55,7 @@ def fix_conf(del_invalid_path=False, fix_entry: ttk.Combobox | tk.Entry | ttk.En
             values=gs_archives_tmp[0: min(len(gs_archives_tmp), gs_config["maxShowArchiveHistory"])]
         )
     gs_config.update({"autoUpdate": gs_config.get("autoUpdate", None)})
+    gs_config.update({"checkForBetaVersion": gs_config.get("checkForBetaVersion", False)})
 
 
 def global_settings():
@@ -182,25 +184,26 @@ class SyncCraft(Pk_Stray):
             try:
                 result = web_get(url, *args, **kwargs)
             except ConnectionRefusedError:
-                self.record_fx("[WinError 10061] 似乎 github.com 已拒绝连接。[ConnectionRefusedError]")
+                self.record_fx(
+                    "[WinError 10061] 似乎 github.com 已拒绝连接。[ConnectionRefusedError]", tag=self.LOG_ERROR)
                 return 2
             except ConnectTimeout:
-                self.record_fx("加载缓慢。[ConnectTimeout]")
+                self.record_fx("加载缓慢。[ConnectTimeout]", tag=self.LOG_ERROR)
                 return 3
             except TimeoutError:
-                self.record_fx('连接超时。[TimeoutError]')
+                self.record_fx("连接超时。[TimeoutError]", tag=self.LOG_ERROR)
                 return 4
             except RemoteDisconnected:
-                self.record_fx("请求头的 User-Agent 错误。[RemoteDisconnected]")
+                self.record_fx("请求头的 User-Agent 错误。[RemoteDisconnected]", tag=self.LOG_ERROR)
                 return 5
             except ConnectionAbortedError:
-                self.record_fx("你的主机中的软件中止了一个已建立的连接。[ConnectionAbortedError]")
+                self.record_fx("你的主机中的软件中止了一个已建立的连接。[ConnectionAbortedError]", tag=self.LOG_ERROR)
                 return 6
             except WebConnectionError:
-                self.record_fx("一般问题 [WebConnectionError]")
+                self.record_fx("一般问题 [WebConnectionError]", tag=self.LOG_ERROR)
                 return 1
             except ConnectionError:
-                self.record_fx("一般问题 [ConnectionError]")
+                self.record_fx("一般问题 [ConnectionError]", tag=self.LOG_ERROR)
                 return 1
             # except Exception as e:
             #     self.record_fx(f"Exception:\n{e}")
@@ -236,7 +239,7 @@ class SyncCraft(Pk_Stray):
             if req.status_code == 200 and content_size != -1:
                 if not silent:
                     dl_bar.stop()
-                    dl_bar.config(mode="determinate", maximum=content_size)
+                    dl_bar.config(mode="determinate", maximum=content_size // chunk_size)
 
                 with open(get_exec() + ".tmp", "wb") as package:
                     count_ch = 0
@@ -247,7 +250,7 @@ class SyncCraft(Pk_Stray):
                         tmp = (f"已下载 {st.scientific_notate(size, custom_seq=rate_list, rate=1024)}/"
                                f"{st.scientific_notate(content_size, custom_seq=rate_list, rate=1024)}")
                         if not silent:
-                            dl_bar.config(value=size)
+                            dl_bar.config(value=size // chunk_size)
                             label.config(text=tmp)
                             root.update()
                             # root.update_idletasks()
@@ -295,7 +298,8 @@ class SyncCraft(Pk_Stray):
         tmp = ""
         buildTime = up_data[1]
         for i in up_content.keys():
-            if up_content[i]["build_time"] > buildTime:
+            if up_content[i]["build_time"] > buildTime and (
+                    gs_config["checkForBetaVersion"] or up_content[i]["stable"]):
                 updatable = i
                 buildTime = up_content[i]["build_time"]
                 # current_date = response_json[i]["date"]
@@ -313,7 +317,7 @@ class SyncCraft(Pk_Stray):
                 up_content_text.grid(row=1, column=0, columnspan=3, padx=10, pady=5)
                 tk.Label(root, text=f"{TITLE} 有新版本可用！", bd=3, relief=GROOVE, width=60, height=1).grid(
                     row=0, column=0, columnspan=3, padx=10, pady=10)
-                dl_bar = ttk.Progressbar(root, length=400, cursor="spider", mode="indeterminate", maximum=content_size)
+                dl_bar = ttk.Progressbar(root, length=400, cursor="xterm", mode="indeterminate", maximum=content_size)
                 ttk.Label(root, text=f"正在将 {TITLE} 从 {__version__} 更新至 {updatable} 版本").grid(
                     row=2, column=0, columnspan=2, padx=10, pady=5)
                 label = ttk.Label(root, text="")
@@ -619,22 +623,27 @@ class SyncCraft(Pk_Stray):
 
         gs_conf = get_conf()
         silent_update = tk.BooleanVar()
-        print(silent_update.get())
+        check_for_beta_ver_var = tk.BooleanVar()
+
+        silent_update.set(gs_conf.get("silent_update", True))
+        check_for_beta_ver_var.set(gs_conf.get("checkForBetaVersion", False))
 
         def save():
             #####################################################
             nonlocal gs_conf
             gs_conf.update({
                 "autoUpdate": autoupdate_rainbow[update_combobox.get()],
+                "checkForBetaVersion": check_for_beta_ver_var.get(),
             })
             put_conf(gs_conf)
             #####################################################
 
         tip_f = ttk.Label(gs_frame, text="启动时检查更新")
         check_for_updates_btn = ttk.Button(
-            gs_frame, text=self.KEY_BOARD["check_for_updates"][2],
-            style=self.BUTTON_STYLE_USE, command=self.KEY_BOARD["check_for_updates"][3])
+            gs_frame, text=self.KEY_BOARD["check_for_updates"][2], style=self.BUTTON_STYLE_USE,
+            command=self.KEY_BOARD["check_for_updates"][3])
         check_for_updates_chbtn = ttk.Checkbutton(gs_frame, text="静默更新", variable=silent_update)
+        beta_ver_chbtn = ttk.Checkbutton(gs_frame, text="检查测试版更新", variable=check_for_beta_ver_var)
         update_combobox = ttk.Combobox(gs_frame, state="readonly", values=tuple(autoupdate_rainbow.keys()))
         del_all_path_btn = ttk.Button(
             gs_frame, width=15, text="清理当前路径", style=self.BUTTON_STYLE_USE,
@@ -650,16 +659,13 @@ class SyncCraft(Pk_Stray):
         ok_button = ttk.Button(win, text="ok.", style=self.BUTTON_STYLE_USE, command=lambda: self.join_cmdline(
             save, lambda: self.global_window_destroyed(win, "全局设置")))
 
-        update_combobox.set(update_combobox["values"][0])
-        for i in autoupdate_rainbow.keys():
-            if autoupdate_rainbow[i] == gs_config.get("autoUpdate", None):
-                update_combobox.set(i)
-        silent_update.set(gs_conf.get("silent_update", True))
-        print(silent_update.get())
+        update_combobox.set(pk.val2key(autoupdate_rainbow, gs_config.get("autoUpdate", None)))
+        print(f"{silent_update.get()=}")
         del_invalid_path_combobox.set(self.SYNC_ROOT_FP)
 
         gs_frame.grid(row=0, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         tip_f.grid(row=0, column=0, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        beta_ver_chbtn.grid(row=1, column=0, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         check_for_updates_btn.grid(row=1, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         check_for_updates_chbtn.grid(row=0, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         update_combobox.grid(row=0, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
@@ -696,11 +702,6 @@ class SyncCraft(Pk_Stray):
                 work_dir_show.insert(0, content)
                 work_dir_show.config(state="readonly")
 
-        def val2key(seq: Mapping, val):
-            for item in seq.keys():
-                if seq[item] == val:
-                    return item
-
         def bw_save_zhuanyong(msg=False):
             tmp_key = bw_list_rainbow[bw_combobox.get()]
             tmp_value = bw_list.get(1.0, END).strip("\n").split("\n")
@@ -709,17 +710,21 @@ class SyncCraft(Pk_Stray):
                 msgbox.showinfo("保存", f"已保存 {tmp_key} 的 {len(tmp_value)} 个值", parent=win)
 
         def save_save():
-            self.reserved_size = int(size_box.get()) * 1024 ** rate_list.index(rate_combobox.get())
-            self.wait_busy_loop = busy_loop_var.get()
-            bw_save_zhuanyong()
-            self.remove_empty_in_bw_list()
-            self.log_insert_mode.set(log_mode_rainbow[log_mode_box.get()])
-            self.OnQuit.set(on_quit_rainbow[on_quit_combobox.get()])
-            self.truncateTooLongStrings.set(truncateStr_rainbow[truncateStr_combobox.get()])
-            self.work_dir = work_dir_show.get()
+            if not isdir(work_dir_show.get()):
+                msgbox.showwarning("设置工作目录", "指定的文件夹不存在", parent=win)
+                return 1
+            else:
+                self.reserved_size = int(size_box.get()) * 1024 ** rate_list.index(rate_combobox.get())
+                self.wait_busy_loop = busy_loop_var.get()
+                bw_save_zhuanyong()
+                self.remove_empty_in_bw_list()
+                self.log_insert_mode.set(log_mode_rainbow[log_mode_box.get()])
+                self.OnQuit.set(on_quit_rainbow[on_quit_combobox.get()])
+                self.truncateTooLongStrings.set(truncateStr_rainbow[truncateStr_combobox.get()])
+                self.work_dir = work_dir_show.get()
 
-            self.upgrade_config()
-            self.global_window_destroyed(win)
+                self.upgrade_config()
+                self.global_window_destroyed(win)
 
         win = tk.Toplevel(self)
         self.global_window_initialize(win, "实例设置", self)
@@ -740,14 +745,7 @@ class SyncCraft(Pk_Stray):
         log_mode_rainbow = {"顺序输出": END, "倒序输出": "1.0"}  # 倒序输出理应是整型，但那样就无法装在 StringVar 变量中了
         on_quit_rainbow = {"每次都询问": 0, "最小化到系统托盘": 1, f"退出 {self.TITLE}": 2}
         truncateStr_rainbow = {"按单词换行": WORD, "按字符换行": CHAR, "禁用换行": NONE}
-        work_dir_rainbow = {
-            "当前文件夹": pk.getcwd(),
-            "当前程序所在文件夹": dirname(get_exec()),
-            "系统临时目录": pk.getenv("Temp"),
-            "同步根目录": self.SYNC_ROOT_FP,
-            "临时目录（隔离）": dirname(__file__),
-            "自定义目录": None,
-        }
+        work_dir_rainbow = self.WORK_DIR_TABLET
 
         # win.bind("<KeyRelease-a>", lambda x: view_frame.grid(row=0, column=0))
         # win.bind("<KeyRelease-b>", lambda x: syncFactor_frame.grid(row=0, column=0))
@@ -809,11 +807,11 @@ class SyncCraft(Pk_Stray):
         bw_list.insert(1.0, "\n".join(self.profileSettings.get("volumeId_blacklist")))
         bw_combobox.bind("<<ComboboxSelected>>", lambda x: upgrade_bw_box())
         bw_combobox.set(bw_combobox["values"][0])
-        on_quit_combobox.set(val2key(on_quit_rainbow, self.OnQuit.get()))
-        log_mode_box.set(val2key(log_mode_rainbow, self.log_insert_mode.get()))
-        truncateStr_combobox.set(val2key(truncateStr_rainbow, self.truncateTooLongStrings.get()))
+        on_quit_combobox.set(pk.val2key(on_quit_rainbow, self.OnQuit.get()))
+        log_mode_box.set(pk.val2key(log_mode_rainbow, self.log_insert_mode.get()))
+        truncateStr_combobox.set(pk.val2key(truncateStr_rainbow, self.truncateTooLongStrings.get()))
         work_dir_combobox.bind("<<ComboboxSelected>>", lambda x: upgrade_workdir_show())
-        work_dir_combobox.set(val2key(work_dir_rainbow, self.work_dir))
+        work_dir_combobox.set(pk.val2key(work_dir_rainbow, self.work_dir))
 
         mode_box.bind("<<ComboboxSelected>>", lambda x: self.join_cmdline(
             lambda: forget_all(), lambda: mode_rainbow[mode_box.get()].grid(
@@ -1058,7 +1056,7 @@ class SyncCraft(Pk_Stray):
         edit_menu.add_command(label="移除黑白名单中的空值", command=self.remove_empty_in_bw_list)
         view_menu.add_command(
             label="清空日志", command=lambda: self.join_cmdline(self.log_list.clear, self.refresh))
-        view_menu.add_checkbutton(label="自动滚屏", variable=self.log_scroll2end, command=self.refresh)
+        view_menu.add_checkbutton(label="自动滚屏", variable=self.log_scroll2end, command=self.refresh, state=DISABLED)
         view_menu.add_separator()
         view_menu.add_command(
             label="检查已绑定的按键", command=lambda: self.gui_key_view(self.KEY_BOARD, key_=lambda x: str(x)))
