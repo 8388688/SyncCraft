@@ -2,6 +2,12 @@
     "version": "1.9.1",
     "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.1",
     "updates": {
+        "1.9.2-beta1": {
+            "build_time": 1740931200,
+            "content": "- :bug: 修复资源文件路径错误的 bug\n- :art: 修正部分间接导入模块的问题\n",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.2-beta1/SyncCraft.exe",
+            "stable": false
+        },
         "1.9.1": {
             "build_time": 1740844800,
             "content": "- Deleted: 移除 `file_op.py`\n- 修改『今日人品』的生成代码\n- 移除对 win32process 的依赖\n- 移除对 getpass 的依赖\n- 移除对 socket 的依赖\n- 在『编辑配置文件』中，将 disabledWhenSubWindow 将 true 改为 false 时，保存并返回窗口时，会使主窗口再也无法获得响应。\n- 用户可以自定义设置工作目录\n- 在线更新加入『gh-pages』打开页面并在更新内容之后紧跟『下载链接』\n",
