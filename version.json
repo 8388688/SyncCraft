@@ -1,11 +1,17 @@
 {
-    "version": "1.9.1",
-    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.2-beta2",
+    "version": "1.9.2",
+    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.2",
     "updates": {
+        "1.9.2": {
+            "build_time": 1741536000,
+            "content": "- :construction: 不再允许用户自行选择『日志自动滚屏』，默认开启。\n- :bug: 新创建同步根目录时，因部分配置文件缺省而报 KeyError 错误的问题。\n- :sparkles: 『检查更新』可以自行选择更新到正式版还是测试版。\n",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.2/SyncCraft_windowed.exe",
+            "stable": false
+        },
         "1.9.2-beta2": {
             "build_time": 1741449600,
             "content": "\n**1.10 版本计划用 pyQt6 全面改写 GUI 框架**\n\n- :art: 计划移除自动滚屏按钮（以后强制自动滚屏）\n- :sparkles: 自主选择工作目录\n- :bug: 修复托盘图标在程序退出后无法自行消失，仍留在托盘中的 bug\n",
-            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.2/SyncCraft_windowed.exe",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.2-beta2/SyncCraft_windowed.exe",
             "stable": false
         },
         "1.9.2-beta1": {

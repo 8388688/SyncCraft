@@ -259,6 +259,7 @@ class PeekerGui(pk.Peeker, Treasure):
         }
         self.gui_live = True
         self.log_scroll2end.set(True)
+        print(self.log_scroll2end.get())
 
         # 以下的赋值并不重要，具体可参考 Peeker 的  __init__ 函数末尾和 extract_config() 函数
         # null
@@ -450,7 +451,7 @@ class PeekerGui(pk.Peeker, Treasure):
     def extract_config(self):
         super().extract_config()
         self.user_history = self.userdata.get("history", {})
-        self.log_scroll2end.set(self.userdata.get("log_scroll2end", False))
+        self.log_scroll2end.set(self.userdata.get("log_scroll2end", True))
         self.show_terminal_warning.set(self.warnings.get("show_terminal_warning", False))
         self.take_focus.set(self.userdata.get("take_focus", False))
         self.topmost.set(self.userdata.get("topmost", False))

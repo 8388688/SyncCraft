@@ -1,6 +1,4 @@
-# 『』
 import json.decoder
-from collections.abc import Mapping
 from http.client import RemoteDisconnected
 from os import chdir, remove, rename, popen, system
 from os.path import dirname, normpath, samefile, isdir, abspath, isabs
@@ -264,7 +262,7 @@ class SyncCraft(Pk_Stray):
                 rename(get_exec(), exec_bak)
                 rename(get_exec() + ".tmp", get_exec())
             else:
-                self.record_fx("下载错误！", response.status_code)
+                self.record_fx(f"下载错误！{response.status_code=}, {content_size=}", tag=self.LOG_ERROR)
             tmp = "更新完成，用时%.1fs\n你是否现在重启 %s" % (time.time() - start_t, TITLE)
             if not silent:
                 dl_bar.forget()
@@ -630,12 +628,14 @@ class SyncCraft(Pk_Stray):
 
         def save():
             #####################################################
+            global gs_config
             nonlocal gs_conf
             gs_conf.update({
                 "autoUpdate": autoupdate_rainbow[update_combobox.get()],
                 "checkForBetaVersion": check_for_beta_ver_var.get(),
             })
             put_conf(gs_conf)
+            gs_config = gs_conf
             #####################################################
 
         tip_f = ttk.Label(gs_frame, text="启动时检查更新")

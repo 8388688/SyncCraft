@@ -250,7 +250,7 @@ class Peeker:  # TODO: 参考“点名器.py”
             "volumeId_whitelist": [], "volumeId_blacklist": [], "label_blacklist": [], "label_whitelist": [],
             "file_blacklist": [], "file_whitelist": []
         })
-        self.work_dir = self.WORK_DIR_TABLET.get(self.conf_config["work_dir"], getcwd())
+        self.work_dir = self.WORK_DIR_TABLET.get(self.conf_config.get("work_dir", getcwd()), getcwd())
         self.record_fx("Extract Config 已更新")
 
     def save(self, ren: bool = True):
