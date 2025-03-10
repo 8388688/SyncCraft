@@ -6,7 +6,7 @@
             "build_time": 1741536000,
             "content": "- :construction: 不再允许用户自行选择『日志自动滚屏』，默认开启。\n- :bug: 新创建同步根目录时，因部分配置文件缺省而报 KeyError 错误的问题。\n- :sparkles: 『检查更新』可以自行选择更新到正式版还是测试版。\n",
             "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.2/SyncCraft_windowed.exe",
-            "stable": false
+            "stable": true
         },
         "1.9.2-beta2": {
             "build_time": 1741449600,
