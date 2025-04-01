@@ -6,7 +6,7 @@ from time import time, localtime, strftime
 
 import simple_tools as st
 
-__version__ = "1.9.2"
+__version__ = "1.9.3-beta1"
 build_time = 1741536000
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")

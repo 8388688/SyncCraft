@@ -101,6 +101,7 @@ def global_settings():
     # root.minsize(300, 300)
 
     user_input = tk.StringVar()
+    can_temp = tk.BooleanVar()
     valid_ui = False
     # entry = tk.Spinbox(root, textvariable=user_input, width=42, highlightthickness=2, highlightbackground="grey",
     #                    highlightcolor="gold")
@@ -120,8 +121,9 @@ def global_settings():
     tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=12,
               text="清理失效路径", command=lambda: fix_conf(del_invalid_path=True, fix_entry=entry)).grid(
         row=3, column=1, padx=10, pady=5)
-    tk.Button(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=12,
-              text="使用临时身份", command=lambda: user_input.set(join(global_settings_dirp, "TempIdentity"))).grid(
+    tk.Checkbutton(root, highlightbackground="grey", highlightcolor="green", highlightthickness=1, width=12,
+                   text="临时身份", variable=can_temp,
+                   command=lambda: user_input.set(join(global_settings_dirp, "TempIdentity"))).grid(
         row=3, column=2, padx=10, pady=5)
 
     if gs_config.get("autoUpdate"):
@@ -131,7 +133,7 @@ def global_settings():
         # update(root, record_fx)
 
     root.mainloop()
-    return valid_ui, user_input.get()
+    return valid_ui, user_input.get(), can_temp.get()
 
 
 class SyncCraft(Pk_Stray):
@@ -346,6 +348,12 @@ class SyncCraft(Pk_Stray):
                 self.extract_config()
                 # self.upgrade_config()
 
+        def restore():
+            text.delete(1.0, END)
+            text.insert(1.0, pk.dumps(self.conf_config))
+            # for i in self.seq_expand_gen(self.conf_config, keepsign=True, keepends=True):
+            #     text.insert(END, i[0])
+
         win = tk.Toplevel(self)
         self.global_window_initialize(win, title=local_title)
 
@@ -353,8 +361,7 @@ class SyncCraft(Pk_Stray):
         scroll_bar = ttk.Scrollbar(win, command=text.yview)
         text.config(yscrollcommand=scroll_bar.set)
 
-        text.delete(1.0, END)
-        text.insert(1.0, pk.dumps(self.conf_config))
+        restore()
         text.grid(row=1, column=0, columnspan=3, sticky=E, padx=1, pady=self.GLOBAL_PADY)
         scroll_bar.grid(row=1, column=3, sticky=W, ipady=120, padx=1, pady=self.GLOBAL_PADY)
         tk.Label(win, text=f"更改这些配置可能会使 {self.TITLE} 停止工作", width=80, height=2,
@@ -363,10 +370,7 @@ class SyncCraft(Pk_Stray):
         ttk.Button(win, text="用默认编辑器打开", style=self.BUTTON_STYLE_USE, width=15,
                    command=lambda: startfile(abspath(self.conf_fp))).grid(
             row=2, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        ttk.Button(win, text="恢复", width=10, style=self.BUTTON_STYLE_USE,
-                   command=lambda: self.join_cmdline(
-                       lambda: text.delete(1.0, END),
-                       lambda: text.insert(1.0, pk.dumps(self.conf_config)))).grid(
+        ttk.Button(win, text="恢复", width=10, style=self.BUTTON_STYLE_USE, command=restore).grid(
             row=2, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         # ttk.Button(win, text="退出", width=10, style=self.BUTTON_STYLE_USE,
         #            command=lambda: self.global_window_destroyed(win, local_title)).grid(
@@ -647,19 +651,21 @@ class SyncCraft(Pk_Stray):
         update_combobox = ttk.Combobox(gs_frame, state="readonly", values=tuple(autoupdate_rainbow.keys()))
         del_all_path_btn = ttk.Button(
             gs_frame, width=15, text="清理当前路径", style=self.BUTTON_STYLE_USE,
-            command=lambda: self.join_cmdline(
-                gs_conf["archives"].remove(self.SYNC_ROOT_FP)
+            command=self.join_cmdline(
+                lambda: gs_conf["archives"].remove(self.SYNC_ROOT_FP)
                 if gs_conf.get("archives", []) and self.SYNC_ROOT_FP in gs_conf
                 else st.pass_,
-                fix_conf(del_invalid_path=False, fix_entry=del_invalid_path_combobox))
+                lambda: fix_conf(del_invalid_path=False, fix_entry=del_invalid_path_combobox),
+                lambda: self.record_fx("已清理"),
+            )
         )
         del_invalid_path_combobox = ttk.Combobox(
             gs_frame, state="readonly", width=55, values=gs_conf.get("archives", []))
 
-        ok_button = ttk.Button(win, text="ok.", style=self.BUTTON_STYLE_USE, command=lambda: self.join_cmdline(
+        ok_button = ttk.Button(win, text="ok.", style=self.BUTTON_STYLE_USE, command=self.join_cmdline(
             save, lambda: self.global_window_destroyed(win, "全局设置")))
 
-        update_combobox.set(pk.val2key(autoupdate_rainbow, gs_config.get("autoUpdate", None)))
+        update_combobox.set(pk.val2key(autoupdate_rainbow, gs_conf.get("autoUpdate", None)))
         print(f"{silent_update.get()=}")
         del_invalid_path_combobox.set(self.SYNC_ROOT_FP)
 
@@ -669,7 +675,7 @@ class SyncCraft(Pk_Stray):
         check_for_updates_btn.grid(row=1, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         check_for_updates_chbtn.grid(row=0, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         update_combobox.grid(row=0, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        del_all_path_btn.grid(row=3, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        del_all_path_btn.grid(row=3, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         del_invalid_path_combobox.grid(row=2, column=0, columnspan=3, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         ok_button.grid(row=30, column=0, columnspan=30, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
@@ -693,14 +699,17 @@ class SyncCraft(Pk_Stray):
                 bw_list.insert(END, j + "\n")
 
         def upgrade_workdir_show():
+            nonlocal temp_use_custom_dir
             content = work_dir_rainbow[work_dir_combobox.get()]
             work_dir_show.config(state=NORMAL)
             work_dir_show.delete(0, END)
+            temp_use_custom_dir = True
             if content is None:
                 pass
             else:
                 work_dir_show.insert(0, content)
                 work_dir_show.config(state="readonly")
+                temp_use_custom_dir = False
 
         def bw_save_zhuanyong(msg=False):
             tmp_key = bw_list_rainbow[bw_combobox.get()]
@@ -722,6 +731,7 @@ class SyncCraft(Pk_Stray):
                 self.OnQuit.set(on_quit_rainbow[on_quit_combobox.get()])
                 self.truncateTooLongStrings.set(truncateStr_rainbow[truncateStr_combobox.get()])
                 self.work_dir = work_dir_show.get()
+                self.useCustomDir = temp_use_custom_dir
 
                 self.upgrade_config()
                 self.global_window_destroyed(win)
@@ -746,6 +756,8 @@ class SyncCraft(Pk_Stray):
         on_quit_rainbow = {"每次都询问": 0, "最小化到系统托盘": 1, f"退出 {self.TITLE}": 2}
         truncateStr_rainbow = {"按单词换行": WORD, "按字符换行": CHAR, "禁用换行": NONE}
         work_dir_rainbow = self.WORK_DIR_TABLET
+
+        temp_use_custom_dir = self.useCustomDir
 
         # win.bind("<KeyRelease-a>", lambda x: view_frame.grid(row=0, column=0))
         # win.bind("<KeyRelease-b>", lambda x: syncFactor_frame.grid(row=0, column=0))
@@ -815,7 +827,7 @@ class SyncCraft(Pk_Stray):
 
         mode_box.bind("<<ComboboxSelected>>", lambda x: self.join_cmdline(
             lambda: forget_all(), lambda: mode_rainbow[mode_box.get()].grid(
-                row=0, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)))
+                row=0, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY))())
         mode_box.set(mode_box["values"][0])
 
         # 以下为 ViewFrame 的部件
@@ -951,7 +963,10 @@ class SyncCraft(Pk_Stray):
         self.menu_bar.add_cascade(label="帮助", menu=help_menu)
 
         sync_menu.add_command(label="打开同步根目录", command=lambda: startfile(self.SYNC_ROOT_FP))
+        sync_menu.add_command(label="打开当前全局日志", command=lambda: startfile(self.gs_log_fp))
+        sync_menu.add_command(label="打开全局日志根目录", command=lambda: startfile(self.GLOBAL_LOG_DIRP))
         sync_menu.add_command(label="打开终端", command=lambda: startfile(environ["COMSPEC"]))
+        sync_menu.add_separator()
         sync_menu.add_command(label=self.KEY_BOARD["run"][2], command=self.KEY_BOARD["run"][3],
                               accelerator=self.KEY_BOARD["run"][1])
         sync_menu.add_command(label=self.KEY_BOARD["terminated_sync"][2], command=self.KEY_BOARD["terminated_sync"][3],
@@ -1020,8 +1035,6 @@ class SyncCraft(Pk_Stray):
             "警告", "除非你已经完全明白这些功能的用途，否则请使之保持默认值"))
         lab_menu.add_command(label="py执行任意命令",
                              command=lambda: self.template_sysTerminal(exec, False, strip=True))
-        lab_menu.add_command(label="终端执行任意命令(system)", command=lambda: self.template_sysTerminal(
-            system, True, strip=True))
         lab_menu.add_command(label="终端执行任意命令(popen)", command=lambda: self.template_sysTerminal(
             p_popen, True, strip=True))
         lab_menu.add_command(label="编辑配置文件", command=self.template_conf_put)
@@ -1055,7 +1068,7 @@ class SyncCraft(Pk_Stray):
         edit_menu.add_command(label="将根目录下的无关文件加入存档", command=join_useless)
         edit_menu.add_command(label="移除黑白名单中的空值", command=self.remove_empty_in_bw_list)
         view_menu.add_command(
-            label="清空日志", command=lambda: self.join_cmdline(self.log_list.clear, self.refresh))
+            label="清空日志", command=self.join_cmdline(self.log_list.clear, self.refresh))
         view_menu.add_checkbutton(label="自动滚屏", variable=self.log_scroll2end, command=self.refresh, state=DISABLED)
         view_menu.add_separator()
         view_menu.add_command(
@@ -1178,9 +1191,9 @@ if __name__ == "__main__":
     if not no_gui:
         g2c2 = SyncCraft(profile[1])
         g2c2.setup()
+        g2c2.destroyWhenExit = profile[2]
         g2c2.shut()
         g2c2.refresh()
-
     else:
         g2c2 = pk.Peeker(profile[1])
         g2c2.setup()

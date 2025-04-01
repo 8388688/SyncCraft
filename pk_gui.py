@@ -3,7 +3,7 @@ from __future__ import print_function
 import re
 import threading
 import tkinter as tk
-from collections.abc import MutableMapping
+# from collections.abc import MutableMapping
 from json import dumps, loads
 from os import startfile, environ, listdir
 from os.path import exists, join
@@ -14,7 +14,7 @@ from tkinter import ttk
 from tkinter.constants import *
 from tkinter.filedialog import asksaveasfilename, askopenfilename
 from traceback import format_exc
-from typing import Sequence, Callable, Set
+from typing import Sequence, Callable, Set, Mapping
 
 import pystray
 import time
@@ -235,7 +235,7 @@ class PeekerGui(pk.Peeker, Treasure):
         self.KEY_BOARD: dict[str: tuple[str, str, str, Callable]] = {
             "refresh": ("<F5>", "F5", "刷新", lambda x=None: self.refresh(),),
             "terminate": ("<Control-Alt-F2>", "Ctrl+Alt+F2", "强行终止", lambda x=None: self.join_cmdline(
-                lambda: self.destroy(), lambda: pk.sys_exit(-1))),
+                lambda: self.destroy(), lambda: pk.sys_exit(-1))()),
             "exit": (
                 "<Control-F4>", "Ctrl+F4", "放弃保存并退出", lambda x=None: self.gui_destroy(True, save=False)),
             "save_exit": (
@@ -493,24 +493,32 @@ class PeekerGui(pk.Peeker, Treasure):
             self.profileSettings.update({i_: tmp})
             self.record_fx(f"在 {i_} 中移除了 {ch} 个空值")
 
-    def seq_expand_gen(self, seq: Sequence | MutableMapping | Set, key_: Callable = lambda x: x,
-                       recursion: bool = True, tab: str = "    ", keepends=True, _deep=0) -> tuple[str, int]:
-        if isinstance(seq, MutableMapping):
+    def seq_expand_gen(self, seq: Sequence | Mapping | Set, key_: Callable = lambda x: x,
+                       tab: str = "    ", keepends=True, keepsign=False, _deep=0) -> tuple[str, int]:
+        if isinstance(seq, Mapping):
             dict_copy = seq
+            sign = "{},"
         else:
             if _deep == 0:
                 self.record_fx("数据类型不规范：", type(seq), tag=self.LOG_WARNING)
+            sign = "[],"
             dict_copy = dict()
             for i, j in enumerate(seq):
                 dict_copy.update({i: j})
 
+        if keepsign:
+            yield sign[0] + ("\n" if keepends else ""), _deep
         for i in dict_copy.keys():
-            if isinstance(dict_copy[i], Sequence | MutableMapping | Set) and not isinstance(dict_copy[i], str):
-                yield str(i) + ":" + ("\n" if keepends else ""), _deep
-                for j in self.seq_expand_gen(dict_copy[i], key_=key_, recursion=recursion, tab=tab, _deep=_deep + 1):
-                    yield tab + j[0], j[1]
+            if isinstance(dict_copy[i], Sequence | Mapping | Set) and not isinstance(dict_copy[i], str):
+                yield (tab if keepsign else "") + str(i) + ":" + ("\n" if keepends else ""), _deep
+                for j in self.seq_expand_gen(
+                        dict_copy[i], key_=key_, tab=tab, keepends=keepends, keepsign=keepsign, _deep=_deep + 1):
+                    yield (tab if keepsign else "") + tab + j[0], j[1]
             else:
-                yield str(i) + ": " + str(key_(dict_copy[i])) + ("\n" if keepends else ""), _deep
+                yield ((tab if keepsign else "") + str(i) + ": " + str(key_(dict_copy[i])) +
+                       (sign[2] if keepsign else "") + ("\n" if keepends else ""), _deep)
+        if keepsign:
+            yield sign[1] + ("\n" if keepends else ""), _deep
 
     # ---------------------------
     def global_window_initialize(self, cls: tk.Toplevel, title="", parent=None):
@@ -581,7 +589,7 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
         if each:
             for i in cmd_get.split("\n"):
                 if (not strip) or (i and i != "\n"):
-                    self.record_fx(f"执行命令：{i}")
+                    self.record_fx(f"分条执行命令：{i}")
                     try:
                         fx(i)
                     except Exception as e:
@@ -600,19 +608,22 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
         self.global_window_destroyed(win_)
 
     def template_sysTerminal(self, fx, each=False, name="", initialvalue: str = "", strip=False, show_ter_warning=None):
+        self.record_fx(f"{show_ter_warning=}, {self.show_terminal_warning.get()=}")
         if (show_ter_warning is not None and show_ter_warning) or (
                 show_ter_warning is None and not self.show_terminal_warning.get()):
-            msgbox.showwarning("警告", "本窗口缺少报错和输出显示的功能，因此并不能代替你的 Terminal 终端",
-                               icon="warning")
+            msgbox.showwarning("警告", "本窗口缺少报错和输出显示的功能，因此并不能代替你的 Terminal 终端")
             msgbox.showinfo(
-                "注意", "在 Windows 系统中，要打开 Terminal 终端，\n请按下 Win徽标+R 键，在弹出的窗口中输入 cmd，然后回车",
+                "注意", (
+                    "在 Windows 系统中，要打开 Terminal 终端，\n"
+                    "请按下 Win徽标+R 键，在弹出的窗口中输入 cmd，然后回车"),
             )
             msgbox.showinfo(
-                "注意", "在 Linux 系统中，请按下 Alt+F2 键，\n在弹出的窗口中输入 gnome-terminal，然后回车\n"
-                        "本方法不一定适用于所有的 Linux 发行版",
+                "注意", (
+                    "在 Linux 系统中，请按下 Alt+F2 键，\n在弹出的窗口中输入 gnome-terminal，然后回车\n"
+                    "本方法不一定适用于所有的 Linux 发行版"
+                ),
             )
-            msgbox.showinfo("注意", "要不再显示警告，请勾选命令窗口左下角的“不再显示警告”复选框",
-                            )
+            msgbox.showinfo("注意", "要不再显示警告，请勾选命令窗口左下角的“不再显示警告”复选框")
             if not msgbox.askokcancel("警告", "你确定要继续吗？"):
                 return
         win = tk.Toplevel(self)
@@ -840,6 +851,9 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
         # self.quit()
         if save:
             self.save(ren=True)
+        if self.destroyWhenExit:
+            self.clear_config()
+            self.logout(arc_mode=1, del_log=True, del_conf=False, del_subfile=True)
 
     def gui_get_admin(self, take, quiet):
         self.at_admin_var.set(self.get_admin(take=take, quiet=quiet))

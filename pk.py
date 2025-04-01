@@ -1,9 +1,14 @@
+"""pk.py 中并未实现 "destroyWhenExit": self.destroyWhenExit 的『退出时自动清理数据』功能
+
+真正实现此功能的，在 pk_gui.py 的 gui_destroy 中。
+
+"""
 from __future__ import print_function
 
 from json import loads, dumps
 from os import chdir, rename, remove, rmdir, getenv, listdir, listmounts, listvolumes, getcwd
 from os.path import exists, join, isfile, isdir, realpath, dirname
-from psutil import disk_partitions
+# from psutil import disk_partitions
 from shutil import copy2, copystat, disk_usage
 from subprocess import run as command
 from sys import exit as sys_exit, executable as sys_executable
@@ -13,7 +18,7 @@ from typing import Literal, Callable, Mapping
 import colorama
 import ntsecuritycon
 import pywintypes
-import win32api
+import win32api, win32con
 import win32file
 import win32security
 from builtins import open as fopen
@@ -149,7 +154,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.log_fiet = None
         self.gs_log_fiet = None
         self.conf_fiet = None
-        self.conf_config = None
+        self.conf_config: dict | None = None
 
         self.cursors = {}
         self.solids = []
@@ -164,6 +169,8 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.wait_busy_loop = None
         self.profileSettings = {}
         self.work_dir = ""
+        self.useCustomDir: bool = False
+        self.destroyWhenExit: bool = False
         # 下面这一行才是真正的赋值
         # self.extract_config() <-- 已移入 setup() 函数中
 
@@ -192,7 +199,9 @@ class Peeker:  # TODO: 参考“点名器.py”
             "syncRoot_fp": self.SYNC_ROOT_FP, "cursors": self.cursors,
             "run_beginning": self.run_beginning, "run_completion": self.run_completion,
             "synced_archives": self.synced_archives, "reserved_size": self.reserved_size,
-            "wait_busy_loop": self.wait_busy_loop, "work_dir": val2key(self.WORK_DIR_TABLET, self.work_dir),
+            "wait_busy_loop": self.wait_busy_loop,
+            "work_dir": val2key(self.WORK_DIR_TABLET, self.work_dir) if not self.useCustomDir else self.work_dir,
+            "useCustomDir": self.useCustomDir, "destroyWhenExit": self.destroyWhenExit,
 
             "__version__": __version__, "__RunningMode__": self.__class__.__name__
         })
@@ -250,7 +259,12 @@ class Peeker:  # TODO: 参考“点名器.py”
             "volumeId_whitelist": [], "volumeId_blacklist": [], "label_blacklist": [], "label_whitelist": [],
             "file_blacklist": [], "file_whitelist": []
         })
-        self.work_dir = self.WORK_DIR_TABLET.get(self.conf_config.get("work_dir", getcwd()), getcwd())
+        self.useCustomDir = self.conf_config.get("useCustomDir", False)
+        self.destroyWhenExit = self.conf_config.get("destroyWhenExit", False)
+        if self.useCustomDir:
+            self.work_dir = self.conf_config["work_dir"]
+        else:
+            self.work_dir = self.WORK_DIR_TABLET.get(self.conf_config.get("work_dir", getcwd()), getcwd())
         self.record_fx("Extract Config 已更新")
 
     def save(self, ren: bool = True):
@@ -263,9 +277,9 @@ class Peeker:  # TODO: 参考“点名器.py”
         try:
             self.conf_fiet = fopen(self.conf_fp, "w", encoding="utf-8")
         except PermissionError:
-            self.record_fx(f"无法保存 - 权限不足")
+            self.record_fx(f"无法保存 - 权限不足", tag=self.LOG_ERROR)
         except OSError:
-            self.record_fx(f"无法保存 - 原因如下\n{format_exc()}")
+            self.record_fx(f"无法保存 - 原因如下\n{format_exc()}", tag=self.LOG_ERROR)
         else:
             self.conf_fiet.write(dumps(self.conf_config))
             self.conf_fiet.close()
@@ -278,12 +292,15 @@ class Peeker:  # TODO: 参考“点名器.py”
         return get_md5(self.SYNC_ROOT_FP)
 
     def join_cmdline(self, *args: Callable):
-        for fx in args:
-            if callable(fx):
-                fx()
-            else:
-                self.record_fx(str(fx), "不可调用。", tag=self.LOG_WARNING)
-                # raise ValueError(f"{str(fx)}不可调用。")
+        def join_cmd():
+            for fx in args:
+                if callable(fx):
+                    fx()
+                else:
+                    self.record_fx(str(fx), "不可调用。", tag=self.LOG_WARNING)
+                    # raise ValueError(f"{str(fx)}不可调用。")
+
+        return join_cmd
 
     def get_fromkey(self, keyword, src=None):
         if src is None:
@@ -298,7 +315,7 @@ class Peeker:  # TODO: 参考“点名器.py”
             try:
                 i_mount = listmounts(i)
             except FileNotFoundError:
-                self.record_fx(f"文件系统错误 - {i} 无法映射到对应的挂载点")
+                self.record_fx(f"文件系统错误 - {i} 无法映射到对应的挂载点", tag=self.LOG_ERROR)
                 return False
             else:
                 if realpath(drive) in map(lambda x: realpath(x, strict=False), i_mount):
@@ -311,14 +328,14 @@ class Peeker:  # TODO: 参考“点名器.py”
         try:
             return win32api.GetVolumeInformation(drive)[0]
         except pywintypes.error:
-            self.record_fx(f"执行出错：\n{format_exc()}")
+            self.record_fx(f"执行出错：\n{format_exc()}", tag=self.LOG_ERROR)
             return None
 
     def __set_volume_label(self, drive, label=""):
         try:
             return win32file.SetVolumeLabel(drive, label)
         except pywintypes.error:
-            self.record_fx(f"执行出错：\n{format_exc()}")
+            self.record_fx(f"执行出错：\n{format_exc()}", tag=self.LOG_ERROR)
 
     get_volume_label = __get_volume_label
     set_volume_label = __set_volume_label
@@ -483,8 +500,42 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.unlock_arc(self.synced_archives, unlock_pre=unlock_pre, delete=delete, untie=untie)
         self.record_fx(f"{self.unlockall_cur.__name__} 命令成功完成")
 
-    def preserve(self, fname, hidden: bool | None, preserve: bool | None):
+    def preserve_clear(self, fname):
+        self.record_fx("撤销", fname, "的权限")
+        win32security.SetNamedSecurityInfo(
+            fname, win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION, None, None, None, None
+        )  # TODO: 撤销一切权限
+
+    def preserve_false(self, fname):
+        self.record_fx("调用:", self.preserve_false.__name__, f"{fname=}")
+        # sd = win32security.GetFileSecurity(fname, win32security.DACL_SECURITY_INFORMATION)
+
+        everyone, domain, type_ = win32security.LookupAccountName("", "Everyone")
+        admins, domain, type_ = win32security.LookupAccountName("", "Administrators")
+        user, domain, type_ = win32security.LookupAccountName("", win32api.GetUserName())
+
+        new_sd = win32security.SECURITY_DESCRIPTOR()
+        new_sd.SetSecurityDescriptorOwner(user, 0)
+
+        dacl = win32security.ACL()
+        dacl.AddAccessAllowedAce(win32security.ACL_REVISION, ntsecuritycon.FILE_GENERIC_READ, everyone)
+        dacl.AddAccessAllowedAce(
+            win32security.ACL_REVISION,
+            ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_WRITE,
+            user)
+        dacl.AddAccessAllowedAce(win32security.ACL_REVISION, ntsecuritycon.FILE_ALL_ACCESS, admins)
+
+        new_sd.SetSecurityDescriptorDacl(1, dacl, 0)
+        # sd.SetSecurityDescriptorDacl(1, dacl, 0)
+        win32security.SetFileSecurity(fname, win32security.OWNER_SECURITY_INFORMATION |
+                                      win32security.DACL_SECURITY_INFORMATION, new_sd)
+        # win32security.SetFileSecurity(fname, win32security.DACL_SECURITY_INFORMATION, sd)
+
+        self.record_fx(self.preserve_false.__name__, "命令成功完成")
+
+    def preserve(self, fname, hidden: bool | None, preserve: bool | None, force: bool = True):
         # hidden 和 preserve: True = 设置保护，False = 取消保护，None = 不保护
+        # force: 强制模式
         self.record_fx(f"{self.record_fx.__name__}: {fname=}")
         if hidden is None:
             self.record_fx(f"{fname} 不隐藏")
@@ -499,9 +550,12 @@ class Peeker:  # TODO: 参考“点名器.py”
             h = win32process.GetProcessWindowStation()
             dacl_2 = win32security.GetUserObjectSecurity(h, self.USER_SECURITY_INFO)
             """
+            if force:
+                self.preserve_false(fname)
             userx_sid = win32security.LookupAccountName("", "Everyone")[0]
-            sd = win32security.GetNamedSecurityInfo(fname, win32security.SE_FILE_OBJECT,
-                                                    win32security.DACL_SECURITY_INFORMATION)
+            # tmp_sd.SetSecurityDescriptorOwner(userx_sid, 0)
+            sd = win32security.GetNamedSecurityInfo(
+                fname, win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION)
             dacl = sd.GetSecurityDescriptorDacl()
             acl_revision = win32security.ACL_REVISION
             # flag = ntsecuritycon.CONTAINER_INHERIT_ACE | ntsecuritycon.OBJECT_INHERIT_ACE  # 此文件夹、子文件夹和文件
@@ -512,12 +566,11 @@ class Peeker:  # TODO: 参考“点名器.py”
 
             if dacl is not None:
                 if preserve:
-                    # win32security.SetNamedSecurityInfo(
-                    #     fname, win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION,
-                    #     None, None, None, None) # TODO: 撤销一切权限
+                    # self.preserve_clear(fname)
                     dacl.AddAccessDeniedAceEx(acl_revision, flag, permission, userx_sid)
                 else:
                     # sd.SetAccessRuleProtection(True, False)
+                    """
                     deleted = []
                     for ace_index in range(dacl.GetAceCount()):
                         (ace_type, ace_flags), access_mask, sid = dacl.GetAce(ace_index)
@@ -527,12 +580,15 @@ class Peeker:  # TODO: 参考“点名器.py”
                     for item in deleted:
                         dacl.DeleteAce(0)
                     dacl.AddAccessAllowedAceEx(acl_revision, flag, permission, userx_sid)
+                    """
+
                     # dacl.AddAccessAllowedAceEx(
                     #     win32security.ACL_REVISION_DS,
-                    #     win32security.OBJECT_INHERIT_ACE | win32security.CONTAINER_INHERIT_ACE | win32security.INHERITED_ACE,
+                    #     (win32security.OBJECT_INHERIT_ACE | win32security.CONTAINER_INHERIT_ACE |
+                    #      win32security.INHERITED_ACE),
                     #     ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_EXECUTE, userx_sid)
             else:
-                self.record_fx(f"{fname} 所在驱动器似乎不支持 NTFS 安全权限", tag=self.LOG_WARNING)
+                self.record_fx(f"{fname} 所在驱动器似乎不支持 NTFS 安全权限", tag=self.LOG_ERROR)
 
             sd.SetSecurityDescriptorDacl(1, dacl, 0)
             win32security.SetNamedSecurityInfo(
@@ -613,7 +669,7 @@ class Peeker:  # TODO: 参考“点名器.py”
             tmp2 = self.__get_volume_label(file_path)
             self.record_fx(f"[{file_path}] 的卷标是 [{tmp2}]")
         else:
-            self.record_fx(f"检查卷标时出现错误 - {file_path} 文件不存在")
+            self.record_fx(f"检查卷标时出现错误 - {file_path} 文件不存在", tag=self.LOG_ERROR)
             tmp2 = False
         lab_blk = self.get_fromkey("label_blacklist", file_path)
         if not lab_blk or tmp2 in lab_blk:
@@ -685,7 +741,7 @@ class Peeker:  # TODO: 参考“点名器.py”
                             self.record_fx("用户终止了同步")
                             break
                         if get_freespace_shutil(self.cursors[i]["dst"]) <= self.reserved_size:
-                            self.record_fx(f"硬盘空间不足，停止 {i} 的同步")
+                            self.record_fx(f"硬盘空间不足，停止 {i} 的同步", tag=self.LOG_WARNING)
                             break
                         else:
                             pass
@@ -698,16 +754,16 @@ class Peeker:  # TODO: 参考“点名器.py”
                                 try:
                                     copy2(sname, fname)
                                 except PermissionError:
-                                    self.record_fx("拒绝访问")
+                                    self.record_fx("拒绝访问", tag=self.LOG_ERROR)
                                 except UnicodeError:
-                                    self.record_fx("文件编码错误")
+                                    self.record_fx("文件编码错误", tag=self.LOG_ERROR)
                                 except FileNotFoundError:
-                                    self.record_fx("找不到文件")
+                                    self.record_fx("找不到文件", tag=self.LOG_ERROR)
                                 except OSError:
-                                    self.record_fx("系统错误：")
+                                    self.record_fx("系统错误：", tag=self.LOG_ERROR)
                                     self.record_fx(format_exc())
                                 except Exception as e:
-                                    self.record_fx("其他错误")
+                                    self.record_fx("其他错误", tag=self.LOG_ERROR)
                                     self.record_fx(format_exc())
                                 finally:
                                     yield sname, fname
@@ -716,7 +772,8 @@ class Peeker:  # TODO: 参考“点名器.py”
                                 if isfile(fname):
                                     pass
                                 else:
-                                    self.record_fx(f"创建失败 - {fname} 相对文件已存在、但类型不一致")
+                                    self.record_fx(f"创建失败 - {fname} 相对文件已存在、但类型不一致",
+                                                   tag=self.LOG_WARNING)
                         elif isdir(sname):
                             # ~~此处偷懒没有加目录存在性判定，因为 safe_md() 函数已经帮我们做好了判定~~
                             # ↑ 已修复
@@ -727,7 +784,7 @@ class Peeker:  # TODO: 参考“点名器.py”
                             else:
                                 pass
                         elif not exists(sname):  # file or dir?
-                            self.record_fx(f"错误：{sname} 文件或目录名称不存在")
+                            self.record_fx(f"错误：{sname} 文件或目录名称不存在", tag=self.LOG_ERROR)
                 else:  # 此 else 对应 if
                     self.record_fx("before_sync 条件不足，停止同步")
                 del tmp
@@ -785,16 +842,19 @@ class Peeker:  # TODO: 参考“点名器.py”
     def get_solid_list(self):
         return list(map(lambda x: x[0], self.solids))
 
-    def logout(self, arc_mode, del_log, del_conf, del_subfile):
+    def logout(self, arc_mode: int, del_log: bool, del_conf: bool, del_subfile: bool):
         self.record_fx(f"{self.logout.__name__} 注销此实例: {arc_mode=}, {del_log=}, {del_conf=}, {del_subfile=}")
         if arc_mode == 0:
+            # 解锁
             self.unlockall_cur(unlock_pre=True, delete=False, untie=True)
         elif arc_mode == 1:
+            # 解锁并删除
             self.unlockall_cur(unlock_pre=True, delete=True, untie=True)
         elif arc_mode == 2:
+            # 解除逻辑关联（保留物理文件）
             self.unlockall_cur(unlock_pre=False, delete=False, untie=False)
         else:
-            self.record_fx(f"参数错误 - {arc_mode}")
+            self.record_fx(f"参数错误 - {arc_mode}", tag=self.LOG_ERROR)
         self.log_fiet.close()
         self.record_fx = lambda *__text: self.record_ln(*__text, local_log=False, global_log=True)
         self.log_fiet_live = False
@@ -853,5 +913,5 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.record_fx("run_until: 同步旗标已解锁")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass
