@@ -5,24 +5,26 @@
 """
 from __future__ import print_function
 
+import stat
+from builtins import open as fopen
 from json import loads, dumps
-from os import chdir, rename, remove, rmdir, getenv, listdir, listmounts, listvolumes, getcwd
+from os import chdir, rename, remove, rmdir, getenv, listdir, listmounts, listvolumes, getcwd, stat as os_stat, chmod
 from os.path import exists, join, isfile, isdir, realpath, dirname
 # from psutil import disk_partitions
 from shutil import copy2, copystat, disk_usage
 from subprocess import run as command
 from sys import exit as sys_exit, executable as sys_executable
+from time import time
 from traceback import format_exc
 from typing import Literal, Callable, Mapping
 
 import colorama
 import ntsecuritycon
 import pywintypes
-import win32api, win32con
+import win32api
+import win32con
 import win32file
 import win32security
-from builtins import open as fopen
-from time import time
 
 from pk_misc import is_admin, __version__, windll, is_exec, TITLE, get_time, get_exec
 from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
@@ -171,6 +173,7 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.work_dir = ""
         self.useCustomDir: bool = False
         self.destroyWhenExit: bool = False
+        self.force_unlock: bool = False
         # 下面这一行才是真正的赋值
         # self.extract_config() <-- 已移入 setup() 函数中
 
@@ -206,7 +209,9 @@ class Peeker:  # TODO: 参考“点名器.py”
             "__version__": __version__, "__RunningMode__": self.__class__.__name__
         })
         self.userdata.update({
-            "run_times": self.run_times, "last_run_times": self.last_run_times
+            "run_times": self.run_times,
+            "last_run_times": self.last_run_times,
+            "force_unlock": self.force_unlock,
         })
         self.conf_config.update({"userdata": self.userdata})
         self.profileSettings.update({
@@ -250,14 +255,19 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.userdata = self.conf_config.get("userdata", {})
         self.run_times = self.userdata.get("run_times", 0)
         self.last_run_times = self.userdata.get("last_run_times", 0)
+        self.force_unlock = self.userdata.get("force_unlock", False)
         self.run_beginning = self.conf_config.get("run_beginning", "")
         self.run_completion = self.conf_config.get("run_completion", "")
         self.synced_archives = self.conf_config.get("synced_archives", [])
         self.reserved_size = self.conf_config.get("reserved_size", 0)
         self.wait_busy_loop = self.conf_config.get("wait_busy_loop", None)
         self.profileSettings = self.conf_config.get("profileSettings", {
-            "volumeId_whitelist": [], "volumeId_blacklist": [], "label_blacklist": [], "label_whitelist": [],
-            "file_blacklist": [], "file_whitelist": []
+            "volumeId_whitelist": [],
+            "volumeId_blacklist": [],
+            "label_blacklist": [],
+            "label_whitelist": [],
+            "file_blacklist": [],
+            "file_whitelist": [],
         })
         self.useCustomDir = self.conf_config.get("useCustomDir", False)
         self.destroyWhenExit = self.conf_config.get("destroyWhenExit", False)
@@ -380,7 +390,6 @@ class Peeker:  # TODO: 参考“点名器.py”
                 # TODO: attrib %j +s +h
 
         self.preserve(self.SYNC_ROOT_FP, True, None)
-        # self.preserve(self.SYNC_ROOT_FP, True, None)
         self.update_cursor()
         self.renameall_cur(save=True)
         self.upgrade_exclude_dir()
@@ -425,7 +434,7 @@ class Peeker:  # TODO: 参考“点名器.py”
             else:
                 self.cursors[__from_src]["archives"].append(new_fn)
             rename(__dir, new_fn)
-            self.preserve(new_fn, self.hidden, self.protection)
+            self.preserve(new_fn, self.hidden, self.protection, self.force_unlock)
         else:
             self.record_fx(f"Folder \'{__dir}\' does not exist!")
 
@@ -442,7 +451,7 @@ class Peeker:  # TODO: 参考“点名器.py”
     def delete(self, item, excludes=()):
         for i in fp_gen(item, abspath=1, files=True, folders=True, exclude=excludes,
                         do_file=lambda x: remove(x), do_dir=lambda x: rmdir(x)):
-            self.preserve(i, False, False)
+            self.preserve(i, False, False, self.force_unlock)
             if isfile(i):
                 self.record_fx(f"delete file: {i}")
             elif isdir(i):
@@ -450,7 +459,7 @@ class Peeker:  # TODO: 参考“点名器.py”
             else:
                 self.record_fx(f"delete unknown: {i}")
         else:
-            self.preserve(item, False, False)
+            self.preserve(item, False, False, self.force_unlock)
             if not listdir(item):
                 rmdir(item)
                 self.record_fx(f"remove archive & rmdir: {item}")
@@ -466,7 +475,7 @@ class Peeker:  # TODO: 参考“点名器.py”
             if exists(i):
                 self.record_fx(f"unlock: {i} - {unlock_pre=}, {delete=}, {untie=}")
                 if unlock_pre:
-                    self.preserve(i, False, False)
+                    self.preserve(i, False, False, self.force_unlock)
                     removed.append(i)
             else:
                 self.record_fx(f"Unlock Failed - Folder {i} does not exist!")
@@ -500,49 +509,113 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.unlock_arc(self.synced_archives, unlock_pre=unlock_pre, delete=delete, untie=untie)
         self.record_fx(f"{self.unlockall_cur.__name__} 命令成功完成")
 
-    def preserve_clear(self, fname):
-        self.record_fx("撤销", fname, "的权限")
-        win32security.SetNamedSecurityInfo(
-            fname, win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION, None, None, None, None
-        )  # TODO: 撤销一切权限
+    def attr_config(self, fname, hidden: bool | None = None):
+        self.record_fx(f"调用 {self.attr_config.__name__}({fname}) 函数，保护方向：{hidden}")
+        if hidden is None:
+            self.record_fx(f"{fname} 不隐藏")
+            return
+        elif hidden:
+            ace = Peeker.ATTR_READ_ONLY + Peeker.ATTR_HIDDEN + Peeker.ATTR_SYSTEM + Peeker.ATTR_ARCHIVE
+        else:
+            ace = Peeker.ATTR_NORMAL
+        self.record_fx(f"Set Attribute: {ace}")
+        win32file.SetFileAttributes(fname, ace)
 
-    def preserve_false(self, fname):
-        self.record_fx("调用:", self.preserve_false.__name__, f"{fname=}")
-        # sd = win32security.GetFileSecurity(fname, win32security.DACL_SECURITY_INFORMATION)
-
+    def ACL_config(self, fname, preserve: bool | None = None, force: bool = False):
+        system_user, domain, type_ = win32security.LookupAccountName("", "SYSTEM")
         everyone, domain, type_ = win32security.LookupAccountName("", "Everyone")
         admins, domain, type_ = win32security.LookupAccountName("", "Administrators")
         user, domain, type_ = win32security.LookupAccountName("", win32api.GetUserName())
+        all_security_info = (
+                win32security.OWNER_SECURITY_INFORMATION
+                | win32security.GROUP_SECURITY_INFORMATION
+                | win32security.DACL_SECURITY_INFORMATION
+                | win32security.SACL_SECURITY_INFORMATION
+        )
+        self.record_fx(f"调用 {self.ACL_config.__name__}({fname}) 函数，保护方向：{preserve}，强制模式：{force}")
 
-        new_sd = win32security.SECURITY_DESCRIPTOR()
-        new_sd.SetSecurityDescriptorOwner(user, 0)
-
-        dacl = win32security.ACL()
-        dacl.AddAccessAllowedAce(win32security.ACL_REVISION, ntsecuritycon.FILE_GENERIC_READ, everyone)
-        dacl.AddAccessAllowedAce(
-            win32security.ACL_REVISION,
-            ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_WRITE,
-            user)
-        dacl.AddAccessAllowedAce(win32security.ACL_REVISION, ntsecuritycon.FILE_ALL_ACCESS, admins)
-
+        """
+        sd = win32security.GetFileSecurity(fname, all_security_info)
+        old_dacl = sd.GetSecurityDescriptorDacl()
+        old_sacl = sd.GetSecurityDescriptorSacl()
+        old_group = sd.GetSecurityDescriptorGroup()
+        """
+        if force:
+            new_sd = win32security.SECURITY_DESCRIPTOR()
+            new_sd.Initialize()
+            dacl = win32security.ACL()
+            dacl.Initialize()
+        else:
+            new_sd = win32security.GetNamedSecurityInfo(
+                fname, win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION)
+            dacl = new_sd.GetSecurityDescriptorDacl()
+        if force and preserve:
+            self.record_fx(f"设置文件所有者 - 管理员组")
+            new_sd.SetSecurityDescriptorOwner(system_user, 0)
+            new_sd.SetSecurityDescriptorOwner(admins, 0)
+        if force:
+            self.record_fx(f"此文件夹、子文件夹和文件", tag=self.LOG_DEBUG)
+            flag = ntsecuritycon.CONTAINER_INHERIT_ACE | ntsecuritycon.OBJECT_INHERIT_ACE  # 此文件夹、子文件夹和文件
+            # flag = ntsecuritycon.CONTAINER_INHERIT_ACE | ntsecuritycon.OBJECT_INHERIT_ACE | win32security.INHERIT_ONLY_ACE | win32security.INHERITED_ACE # 同上：此文件夹、子文件夹和文件的一个变种
+        else:
+            self.record_fx(f"只有此文件夹", tag=self.LOG_DEBUG)
+            flag = ntsecuritycon.NO_PROPAGATE_INHERIT_ACE  # 只有此文件夹
+        permission = ntsecuritycon.FILE_ALL_ACCESS  # 不给任何权限
+        # permission = ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_EXECUTE | ntsecuritycon.FILE_LIST_DIRECTORY | ntsecuritycon.FILE_DELETE_CHILD  # 拒绝读取和执行
+        self.record_fx(f"{preserve=}, {force=}", tag=self.LOG_DEBUG)
+        if preserve is None:
+            self.record_fx(f"{fname} 不保护")
+            return
+        elif preserve:
+            if force:
+                # new_sd.SetSecurityDescriptorOwner(admins, False)
+                dacl.AddAccessDeniedAceEx(win32security.ACL_REVISION, flag, permission, everyone)
+            else:
+                dacl.AddAccessDeniedAce(win32security.ACL_REVISION, permission, everyone)
+        else:
+            if force:
+                dacl.AddAccessAllowedAceEx(win32security.ACL_REVISION, flag, permission, everyone)
+            else:
+                #################################
+                # deleteAce() 确实可以删除继承的权限
+                # 但是似乎每次对 ace 执行操作后，系统会自动检测一遍『已继承的权限』的完整性，如不完整则补齐。
+                deleted = []
+                for ace_index in range(dacl.GetAceCount()):
+                    (ace_type, ace_flags), access_mask, sid = dacl.GetAce(ace_index)
+                    name, domain, account_type = win32security.LookupAccountSid(None, sid)
+                    # self.record_fx(f"{domain}\\{name}: {hex(ace_flags)}")
+                    deleted.append(ace_index)
+                for item in deleted:
+                    dacl.DeleteAce(0)
+                #################################
+                dacl.AddAccessAllowedAce(win32security.ACL_REVISION, permission, everyone)
         new_sd.SetSecurityDescriptorDacl(1, dacl, 0)
-        # sd.SetSecurityDescriptorDacl(1, dacl, 0)
-        win32security.SetFileSecurity(fname, win32security.OWNER_SECURITY_INFORMATION |
-                                      win32security.DACL_SECURITY_INFORMATION, new_sd)
-        # win32security.SetFileSecurity(fname, win32security.DACL_SECURITY_INFORMATION, sd)
+        if force and not preserve:
+            self.record_fx(f"设置文件所有者 - {win32api.GetUserName()}")
+            new_sd.SetSecurityDescriptorOwner(user, 0)
+        if preserve:
+            if force:
+                win32security.SetFileSecurity(
+                    fname, win32security.DACL_SECURITY_INFORMATION |
+                           win32security.OWNER_SECURITY_INFORMATION, new_sd)
+            else:
+                win32security.SetFileSecurity(
+                    fname, win32security.DACL_SECURITY_INFORMATION, new_sd)
+        else:
+            if force:
+                win32security.SetFileSecurity(fname, win32security.DACL_SECURITY_INFORMATION, new_sd)
+                # ↑ 用显示权限替换所有权限，不管是显式的还是已继承的
+                win32security.SetFileSecurity(fname, win32security.OWNER_SECURITY_INFORMATION, new_sd)
+            else:
+                # 保留已继承的权限
+                win32security.SetNamedSecurityInfo(
+                    fname, win32security.SE_FILE_OBJECT,
+                    win32security.DACL_SECURITY_INFORMATION, None, None, dacl, None)
 
-        self.record_fx(self.preserve_false.__name__, "命令成功完成")
-
-    def preserve(self, fname, hidden: bool | None, preserve: bool | None, force: bool = True):
+    def preserve_legacy(self, fname, hidden: bool | None, preserve: bool | None, force: bool = True):
         # hidden 和 preserve: True = 设置保护，False = 取消保护，None = 不保护
         # force: 强制模式
         self.record_fx(f"{self.record_fx.__name__}: {fname=}")
-        if hidden is None:
-            self.record_fx(f"{fname} 不隐藏")
-        elif hidden:
-            ace = Peeker.ATTR_READ_ONLY + Peeker.ATTR_HIDDEN + Peeker.ATTR_SYSTEM + Peeker.ATTR_ARCHIVE
-            self.record_fx(f"Set Attribute: {ace}")
-            win32file.SetFileAttributes(fname, ace)
 
         if preserve is not None:
             """
@@ -550,61 +623,30 @@ class Peeker:  # TODO: 参考“点名器.py”
             h = win32process.GetProcessWindowStation()
             dacl_2 = win32security.GetUserObjectSecurity(h, self.USER_SECURITY_INFO)
             """
-            if force:
-                self.preserve_false(fname)
-            userx_sid = win32security.LookupAccountName("", "Everyone")[0]
-            # tmp_sd.SetSecurityDescriptorOwner(userx_sid, 0)
-            sd = win32security.GetNamedSecurityInfo(
-                fname, win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION)
-            dacl = sd.GetSecurityDescriptorDacl()
-            acl_revision = win32security.ACL_REVISION
-            # flag = ntsecuritycon.CONTAINER_INHERIT_ACE | ntsecuritycon.OBJECT_INHERIT_ACE  # 此文件夹、子文件夹和文件
-            # flag = ntsecuritycon.CONTAINER_INHERIT_ACE | ntsecuritycon.OBJECT_INHERIT_ACE | win32security.INHERIT_ONLY_ACE | win32security.INHERITED_ACE # 同上：此文件夹、子文件夹和文件的一个变种
-            flag = ntsecuritycon.NO_PROPAGATE_INHERIT_ACE  # 只有此文件夹
-            # permission = ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_EXECUTE | ntsecuritycon.FILE_LIST_DIRECTORY | ntsecuritycon.FILE_DELETE_CHILD  # 拒绝读取和执行
-            permission = ntsecuritycon.FILE_ALL_ACCESS  # 不给任何权限
 
             if dacl is not None:
-                if preserve:
-                    # self.preserve_clear(fname)
-                    dacl.AddAccessDeniedAceEx(acl_revision, flag, permission, userx_sid)
-                else:
-                    # sd.SetAccessRuleProtection(True, False)
-                    """
-                    deleted = []
-                    for ace_index in range(dacl.GetAceCount()):
-                        (ace_type, ace_flags), access_mask, sid = dacl.GetAce(ace_index)
-                        name, domain, account_type = win32security.LookupAccountSid(None, sid)
-                        # self.record_fx(f"{domain}\\{name}: {hex(ace_flags)}")
-                        deleted.append(ace_index)
-                    for item in deleted:
-                        dacl.DeleteAce(0)
-                    dacl.AddAccessAllowedAceEx(acl_revision, flag, permission, userx_sid)
-                    """
-
-                    # dacl.AddAccessAllowedAceEx(
-                    #     win32security.ACL_REVISION_DS,
-                    #     (win32security.OBJECT_INHERIT_ACE | win32security.CONTAINER_INHERIT_ACE |
-                    #      win32security.INHERITED_ACE),
-                    #     ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_EXECUTE, userx_sid)
+                # sd.SetAccessRuleProtection(True, False)
+                pass
+                # dacl.AddAccessAllowedAceEx(
+                #     win32security.ACL_REVISION_DS,
+                #     (win32security.OBJECT_INHERIT_ACE | win32security.CONTAINER_INHERIT_ACE |
+                #      win32security.INHERITED_ACE),
+                #     ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_EXECUTE, userx_sid)
             else:
                 self.record_fx(f"{fname} 所在驱动器似乎不支持 NTFS 安全权限", tag=self.LOG_ERROR)
 
-            sd.SetSecurityDescriptorDacl(1, dacl, 0)
-            win32security.SetNamedSecurityInfo(
-                fname, win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION, None, None, dacl, None)
-
-            self.record_fx("Set SecurityAce: " if preserve
-                           else "Delete SecurityAce: " + f"{userx_sid}: {acl_revision, flag, permission}")
+    def preserve(self, fname, hidden: bool | None, preserve: bool | None, force: bool = False):
+        self.record_fx(f"调用 {self.preserve.__name__} 函数, {fname=}, {hidden=}, {preserve=}, {force=}")
+        if preserve is None:
+            self.attr_config(fname, hidden)
+            # self.ACL_config(fname, preserve)
+        elif preserve:
+            self.attr_config(fname, hidden)
+            self.ACL_config(fname, preserve, force)
         else:
-            self.record_fx(f"{fname} 不保护")
-
-        if hidden is None:
-            self.record_fx(f"{fname} 不隐藏")
-        elif not hidden:
-            ace = Peeker.ATTR_NORMAL
-            self.record_fx(f"Set Attribute: {ace}")
-            win32api.SetFileAttributes(fname, ace)
+            self.ACL_config(fname, preserve, force)
+            self.attr_config(fname, hidden)
+        self.record_fx(f"{self.preserve.__name__} 命令成功完成")
 
     def pattern(self, file_path, return_type="code") -> dict | int:
         # return_type: "code" | "dict"
@@ -856,7 +898,8 @@ class Peeker:  # TODO: 参考“点名器.py”
         else:
             self.record_fx(f"参数错误 - {arc_mode}", tag=self.LOG_ERROR)
         self.log_fiet.close()
-        self.record_fx = lambda *__text: self.record_ln(*__text, local_log=False, global_log=True)
+        self.record_fx = lambda *__text, **kwargs: self.record_ln(
+            *__text, local_log=False, global_log=True)
         self.log_fiet_live = False
         if del_conf:
             self.conf_config.clear()

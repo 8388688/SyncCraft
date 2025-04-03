@@ -326,30 +326,16 @@ class PeekerGui(pk.Peeker, Treasure):
         self.record_fx(", ".join(self.global_style.theme_names()))
         self.global_style.theme_use(self.theme.get() if self.theme.get() else "vista")
 
-    def record_register_old(self, *text, sep=" ", end="\n"):
-        """DEPRECATED"""
-        self.record_ln(*text, sep=sep, end=end)
-        text_1 = f"[{time.strftime('%H:%M:%S', time.localtime(time.time()))}]{sep.join(map(str, text))}"
-        self.log_list.append(text_1)
-        try:
-            if self.gui_live:
-                self.log_box.insert(self.log_insert_mode.get(), text_1)
-                if self.log_scroll2end.get():
-                    self.log_box.see(self.log_insert_mode.get())
-        except AttributeError:
-            print(f"AttributeError!    {text_1}")
-            print(format_exc())
-        except tk.TclError:
-            print(f"TclError!    {text_1}")
-            print(format_exc())
-        self.log_box.update()
-
-    def record_register(self, *text, sep=" ", end="\n", tag=pk.Peeker.LOG_INFO):
+    def record_register(self, *text, sep=" ", end="\n", tag=pk.Peeker.LOG_INFO, multiline=False):
         self.record_ln(*text, sep=sep, end=end, tag=tag)
         tmp_text = (
             "[" + time.strftime('%H:%M:%S', time.localtime(time.time())) + "]", tag + ": ",
             sep.join(map(str, text)) + end)
         text_1 = "".join(tmp_text)
+        if not multiline:
+            text_1 = " ".join(text_1.split()) + "\n"
+        else:
+            pass
         try:
             if self.gui_live:
                 self.log_box.see(self.log_insert_mode.get())
@@ -412,7 +398,7 @@ class PeekerGui(pk.Peeker, Treasure):
             else:
                 self.sync_box.insert(END, f"[未知]{i} <===> {self.cursors[i]['dst']}")
 
-        if self.log_scroll2end.get():
+        if True or self.log_scroll2end.get():
             self.log_box.see(self.log_insert_mode.get())
         else:
             print(tmp_view)
@@ -831,7 +817,7 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
         elif destroy_mode == 0:
             # user_ch = askyesnocancel("", "")
             win = tk.Toplevel(self)
-            local_title = "退出" + self.TITLE
+            local_title = f"退出 {self.TITLE}"
             self.global_window_initialize(win, local_title)
             ttk.Label(win, text="当退出时：").grid(
                 row=0, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
@@ -852,8 +838,7 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
         if save:
             self.save(ren=True)
         if self.destroyWhenExit:
-            self.clear_config()
-            self.logout(arc_mode=1, del_log=True, del_conf=False, del_subfile=True)
+            self.logout(arc_mode=1, del_log=True, del_conf=True, del_subfile=True)
 
     def gui_get_admin(self, take, quiet):
         self.at_admin_var.set(self.get_admin(take=take, quiet=quiet))

@@ -732,6 +732,7 @@ class SyncCraft(Pk_Stray):
                 self.truncateTooLongStrings.set(truncateStr_rainbow[truncateStr_combobox.get()])
                 self.work_dir = work_dir_show.get()
                 self.useCustomDir = temp_use_custom_dir
+                self.force_unlock = force_unlock_var.get()
 
                 self.upgrade_config()
                 self.global_window_destroyed(win)
@@ -772,8 +773,11 @@ class SyncCraft(Pk_Stray):
         tip_g = ttk.Label(view_frame, text="日志换行")
         tip_h = ttk.Label(syncFactor_frame, text="工作文件夹")
         busy_loop_var = tk.StringVar()
+        force_unlock_var = tk.BooleanVar()
         # busy_loop_var = tk.BooleanVar()  # BooleanVar() 无法存储 None 值
         busy_loop_var.set(self.wait_busy_loop)
+        force_unlock_var.set(self.force_unlock)
+
         busy_loop_chbtn = ttk.Checkbutton(misc_frame, text="使用 busy_loop 时间等待", variable=busy_loop_var, width=20)
         size_box = self.get_side2side_entry(
             syncFactor_frame, ttk.Spinbox, max_=1024, from_=0, to=1024 - 1, width=20, increment=1)
@@ -794,6 +798,7 @@ class SyncCraft(Pk_Stray):
             length=160, command=lambda x: win.attributes("-alpha", float(x) / 100))
         dis_sub_chbtn = ttk.Checkbutton(
             misc_frame, text="disabledWhenSubWindow", variable=self.disabledWhenSubWindow, state=DISABLED)
+        force_unlock_arc_chbtn = ttk.Checkbutton(misc_frame, text="解锁存档时，使用强制模式", variable=force_unlock_var)
         reset_warning_btn = ttk.Button(
             view_frame, text=self.KEY_BOARD["reset_warnings"][2], style=self.BUTTON_STYLE_USE,
             command=self.KEY_BOARD["reset_warnings"][3])
@@ -857,8 +862,9 @@ class SyncCraft(Pk_Stray):
         work_dir_show.grid(row=2, column=0, columnspan=3, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
         # 以下为 misc_frame 的部件
-        busy_loop_chbtn.grid(row=4, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        dis_sub_chbtn.grid(row=6, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        busy_loop_chbtn.grid(row=1, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        dis_sub_chbtn.grid(row=2, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        force_unlock_arc_chbtn.grid(row=3, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
         # 以下为通用部件
         mode_box.grid(row=30, column=0, sticky=W, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)

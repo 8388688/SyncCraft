@@ -1,7 +1,13 @@
 {
-    "version": "1.9.2",
-    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.2",
+    "version": "1.9.3",
+    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.3",
     "updates": {
+        "1.9.3": {
+            "build_time": 1743609600,
+            "content": "- :fire: pk_gui.py 菜单中移除『终端执行任意命令\\(system\\)』选项，因为使用该函数经常会莫名其妙地出现错误。\n- :fire: 进一步移除『日志自动滚屏』的功能，预计在程序全部改写 by PyQt 之后重新加入。\n- :fire: 移除一些过时的代码如 `record_register_old`。\n- :art: 现在使用更好的 NTFS 安全权限保护的方法，添加『强制模式』可选项。\n- :art: record_register 增加『`multiline`（多行模式）』参数，默认关闭，1.9.2 之前的版本记录日志默认为多行。\n- :rocket: 菜单栏微调。\n- :sparkles: 『使用临时身份』勾选后，关闭时会自动删除实例产生的所有文件。\n- :construction: PyQt 改写中. . . . . .",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.3/SyncCraft_windowed.exe",
+            "stable": true
+        },
         "1.9.2": {
             "build_time": 1741536000,
             "content": "- :construction: 不再允许用户自行选择『日志自动滚屏』，默认开启。\n- :bug: 新创建同步根目录时，因部分配置文件缺省而报 KeyError 错误的问题。\n- :sparkles: 『检查更新』可以自行选择更新到正式版还是测试版。\n",
