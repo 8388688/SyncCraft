@@ -1,7 +1,13 @@
 {
-    "version": "1.9.4-beta1",
-    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.4-beta1",
+    "version": "1.9.4-beta2",
+    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.4-beta2",
     "updates": {
+        "1.9.4-beta2": {
+            "build_time": 1743868800,
+            "content": "- :art: 更新『检查更新』界面",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.4-beta2/SyncCraft_windowed.exe",
+            "stable": false
+        },
         "1.9.4-beta1": {
             "build_time": 1743868800,
             "content": "- :lipstick: 换用更高清的图标\n- :art: 使用更好的异常显示功能\n- :bug: 修复使用临时身份『以管理员权限运行』时报错",

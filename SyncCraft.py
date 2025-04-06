@@ -9,7 +9,10 @@ from requests import get as web_get
 from requests.exceptions import ConnectTimeout, ConnectionError as WebConnectionError
 
 from pk_gui import *
-from pk_misc import global_settings_dirp, global_settings_fp, __version__, build_time, get_exec, is_exec, rate_list
+from pk_misc import (
+    global_settings_dirp, global_settings_fp, __version__,
+    build_time, get_exec, is_exec, rate_list, sc_notate_auto
+)
 
 
 # from distutils import *
@@ -218,21 +221,27 @@ class SyncCraft(Pk_Stray):
             else:
                 return result
 
+        def open_page():
+            return webbopen(response_json["gh-page"])
+
         def update_api():
             nonlocal size, chunk_size, start_t, content_size, silent, tmp
             if not silent:
                 down_btn.config(state=DISABLED)
-                dl_bar.grid(row=3, column=0, columnspan=3, padx=10, pady=5)
+                label1.grid(row=2, column=2, padx=10, pady=5)
+                label2.grid(row=3, column=0, columnspan=3, padx=10, pady=5)
+                dl_bar.grid(row=4, column=0, columnspan=3, padx=10, pady=5)
                 dl_bar.start()
                 root.update()
             else:
                 self.record_fx("准备下载")
             url = up_content[updatable].get("url", None)
-            if not is_exec() and not msgbox.askokcancel("警告", "你确定在程序中更新？", parent=root):
+            if not is_exec() and not msgbox.askokcancel(
+                    "警告", "你确定在程序中更新？", parent=root):
                 return 2
             elif url is None:
                 if not silent:
-                    webbopen(response_json["gh-page"])
+                    open_page()
                 return -2
             elif url:
                 req = safe_connect(url, stream=True)  # 这里需要对 url 更新
@@ -254,11 +263,13 @@ class SyncCraft(Pk_Stray):
                         count_ch += 1
                         package.write(chunk)
                         size += len(chunk)
-                        tmp = (f"已下载 {st.scientific_notate(size, custom_seq=rate_list, rate=1024)}/"
-                               f"{st.scientific_notate(content_size, custom_seq=rate_list, rate=1024)}")
+                        tmp = (f"已下载 {sc_notate_auto(size)}/"
+                               f"{sc_notate_auto(content_size)}"
+                               f"\tspeed: {sc_notate_auto(size / (time.time() - start_t))}")
                         if not silent:
                             dl_bar.config(value=size // chunk_size)
-                            label.config(text=tmp)
+                            label1.config(text=f"{size / content_size * 100:.2f}%")
+                            label2.config(text=tmp)
                             root.update()
                             # root.update_idletasks()
                         else:
@@ -275,8 +286,10 @@ class SyncCraft(Pk_Stray):
             tmp = "更新完成，用时%.1fs\n你是否现在重启 %s" % (time.time() - start_t, TITLE)
             if not silent:
                 dl_bar.forget()
-                msgbox.askyesno("更新完成", tmp, parent=root)
+                k_restart = msgbox.askyesno("更新完成", tmp, parent=root)
                 self.global_window_destroyed(root)
+                if k_restart:
+                    self.gui_destroy(True)
             else:
                 self.record_fx(tmp)
 
@@ -327,13 +340,15 @@ class SyncCraft(Pk_Stray):
                 dl_bar = ttk.Progressbar(root, length=400, cursor="xterm", mode="indeterminate", maximum=content_size)
                 ttk.Label(root, text=f"正在将 {TITLE} 从 {__version__} 更新至 {updatable} 版本").grid(
                     row=2, column=0, columnspan=2, padx=10, pady=5)
-                label = ttk.Label(root, text="")
-                label.grid(row=2, column=2, padx=10, pady=5)
+                label2 = ttk.Label(root, text="")
+                label1 = ttk.Label(root, text="")
                 down_btn = ttk.Button(root, width=10, text="Download!", style=self.BUTTON_STYLE_USE, command=update_api)
-                down_btn.grid(row=4, column=0, padx=10, pady=5)
+                down_btn.grid(row=5, column=0, padx=10, pady=5)
+                ttk.Button(root, width=18, text="Open Github Page", style=self.BUTTON_STYLE_USE,
+                           command=lambda: open_page()).grid(row=5, column=1, padx=10, pady=5)
                 ttk.Button(root, width=10, text="Cancel", style=self.BUTTON_STYLE_USE,
                            command=lambda: self.global_window_destroyed(root, "有新的更新")).grid(
-                    row=4, column=2, padx=10, pady=5)
+                    row=5, column=2, padx=10, pady=5)
                 up_content_text.insert(END, tmp)
                 up_content_text.config(state=DISABLED)
                 root.update()
@@ -654,7 +669,7 @@ class SyncCraft(Pk_Stray):
         check_for_updates_btn = ttk.Button(
             gs_frame, text=self.KEY_BOARD["check_for_updates"][2], style=self.BUTTON_STYLE_USE,
             command=self.KEY_BOARD["check_for_updates"][3])
-        check_for_updates_chbtn = ttk.Checkbutton(gs_frame, text="静默更新", variable=silent_update)
+        check_for_updates_chbtn = ttk.Checkbutton(gs_frame, text="静默更新", variable=silent_update, state=DISABLED)
         beta_ver_chbtn = ttk.Checkbutton(gs_frame, text="检查测试版更新", variable=check_for_beta_ver_var)
         update_combobox = ttk.Combobox(gs_frame, state="readonly", values=tuple(autoupdate_rainbow.keys()))
         del_all_path_btn = ttk.Button(

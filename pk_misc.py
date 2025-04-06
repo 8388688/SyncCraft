@@ -6,7 +6,7 @@ from time import time, localtime, strftime
 
 import simple_tools as st
 
-__version__ = "1.9.4-beta1"
+__version__ = "1.9.4-beta2"
 build_time = 1743868800
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
@@ -63,6 +63,10 @@ def get_time(format_="%Y-%m-%dT%H.%M.%SZ"):
 
 def get_exception_info():
     return sys.exc_info()
+
+
+def sc_notate_auto(number):
+    return st.scientific_notate(number, rate=1024, custom_seq=rate_list)
 
 
 help_text = {
