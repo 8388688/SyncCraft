@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import re
 import threading
+import time
 import tkinter as tk
 # from collections.abc import MutableMapping
 from json import dumps, loads
@@ -13,24 +14,28 @@ from tkinter import messagebox as msgbox
 from tkinter import ttk
 from tkinter.constants import *
 from tkinter.filedialog import asksaveasfilename, askopenfilename
-from traceback import format_exc
+from traceback import format_exception
 from typing import Sequence, Callable, Set, Mapping
 
 import pystray
-import time
 from PIL import Image
 
 import pk
 import simple_tools as st
-from pk_misc import help_text, TITLE, resource_path
+from pk_misc import help_text, TITLE, resource_path, get_exception_info
 
 
 def get_center(cls: tk.Tk | tk.Toplevel):
     """获取特定窗口相对当前屏幕的中心位置坐标
 
+    【在 SyncCraft 1.10+ 版本之后将被 pyQt 取代】
+
     @param cls: “特定窗口”，该窗口的大小
     @return: 字符串，+dd+dd 格式
     """
+    import warnings
+    warnings.warn("这个函数将会在 SyncCraft 1.10+ 版本之后将被 pyQt 取代",
+                  PendingDeprecationWarning, stacklevel=4)
     xOy = "+%d+%d" % (
         (cls.winfo_screenwidth() - cls.winfo_width()) // 2, (cls.winfo_screenheight() - cls.winfo_height()) // 2)
     cls.geometry(xOy)
@@ -139,7 +144,8 @@ class PeekerGui(pk.Peeker, Treasure):
         pk.Peeker.LOG_INFO: "black",
         pk.Peeker.LOG_WARNING: "#C19C00",
         pk.Peeker.LOG_ERROR: "red",
-        pk.Peeker.LOG_DEBUG: "green"
+        # pk.Peeker.LOG_DEBUG: "green",
+        pk.Peeker.LOG_DEBUG: "#009900",
     }
 
     debug = False
@@ -259,7 +265,6 @@ class PeekerGui(pk.Peeker, Treasure):
         }
         self.gui_live = True
         self.log_scroll2end.set(True)
-        print(self.log_scroll2end.get())
 
         # 以下的赋值并不重要，具体可参考 Peeker 的  __init__ 函数末尾和 extract_config() 函数
         # null
@@ -438,16 +443,17 @@ class PeekerGui(pk.Peeker, Treasure):
         super().extract_config()
         self.user_history = self.userdata.get("history", {})
         self.log_scroll2end.set(self.userdata.get("log_scroll2end", True))
-        self.show_terminal_warning.set(self.warnings.get("show_terminal_warning", False))
         self.take_focus.set(self.userdata.get("take_focus", False))
         self.topmost.set(self.userdata.get("topmost", False))
         self.log_insert_mode.set(self.userdata.get("log_insert_mode", END))
         self.theme.set(self.userdata.get("theme", "vista"))
         self.alpha_mode.set(self.userdata.get("alpha_mode", 100))
         self.disabledWhenSubWindow.set(self.userdata.get("disabledWhenSubWindow", False))
+        self.truncateTooLongStrings.set(self.userdata.get("truncateTooLongStrings", NONE))
+
         self.warnings = self.conf_config.get("warnings", {})
         self.OnQuit.set(self.warnings.get("OnQuit", 0))
-        self.truncateTooLongStrings.set(self.userdata.get("truncateTooLongStrings", NONE))
+        self.show_terminal_warning.set(self.warnings.get("show_terminal_warning", False))
 
     def clear_config(self):
         title = f"重置 {self.SYNC_ROOT_FP} 的配置信息"
@@ -579,7 +585,9 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
                     try:
                         fx(i)
                     except Exception as e:
-                        self.record_fx(f"执行 {i} 时报错：\n{format_exc()}")
+                        ef = format_exception(e)
+                        self.record_fx(f"执行 {i} 时报错：\n{e.__context__}, {e.__traceback__}")
+                        # self.record_fx(f"执行 {i} 时报错：\n{format_exc()}")
                 else:
                     self.record_fx(f"跳过空行 - {i}")
         else:
@@ -588,13 +596,13 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
             try:
                 fx(cmd_get)
             except Exception as e:
-                self.record_fx(f"执行命令时报错：\n{format_exc()}")
+                self.record_exc_info(verbose=False)
         self.conf_config["userdata"]["history"].update({"terminal_text": cmd_get})
         self.upgrade_config()
         self.global_window_destroyed(win_)
 
     def template_sysTerminal(self, fx, each=False, name="", initialvalue: str = "", strip=False, show_ter_warning=None):
-        self.record_fx(f"{show_ter_warning=}, {self.show_terminal_warning.get()=}")
+        self.record_fx(f"{show_ter_warning=}, {self.show_terminal_warning.get()=}", tag=self.LOG_DEBUG)
         if (show_ter_warning is not None and show_ter_warning) or (
                 show_ter_warning is None and not self.show_terminal_warning.get()):
             msgbox.showwarning("警告", "本窗口缺少报错和输出显示的功能，因此并不能代替你的 Terminal 终端")
@@ -926,12 +934,13 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
                 self.record_fx(f"传入参数出错 - {select_var.get()}")
 
         win = tk.Toplevel(self)
-        self.global_window_initialize(win, "检查已绑定的按键")
+        self.global_window_initialize(win, "列表检查器")
 
         select_var = tk.StringVar()
         select_var.set("ListView")
         key_view_gui = tk.Listbox(win, width=80, height=20)
-        key_view_text = tk.Text(win, wrap=WORD, undo=True, width=80, height=30)
+        key_view_text = tk.Text(win, wrap=NONE, undo=True, width=80, height=30)
+        # key_view_text = tk.Text(win, wrap=WORD, undo=True, width=80, height=30)
         scroll_gui = ttk.Scrollbar(win, command=key_view_gui.yview, orient=VERTICAL, takefocus=False)
         scroll_text = ttk.Scrollbar(win, command=key_view_text.yview, orient=VERTICAL, takefocus=False)
         key_view_gui.config(yscrollcommand=scroll_gui.set)
@@ -1193,9 +1202,7 @@ class Pk_Stray(PeekerGui):
         # self.gui_main()
 
     def create_systray_icon(self):
-        """
-        使用 Pystray 创建系统托盘图标
-        """
+        """使用 Pystray 创建系统托盘图标"""
         menu = (
             pystray.MenuItem("显示", self.show_window, default=True),
             pystray.MenuItem(self.KEY_BOARD["save_arc"][2], self.KEY_BOARD["save_arc"][3]),

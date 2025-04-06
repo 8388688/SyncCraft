@@ -98,13 +98,13 @@ def global_settings():
     get_center(root)
 
     root.deiconify()
-    # root.minsize(300, 300)
 
     user_input = tk.StringVar()
     can_temp = tk.BooleanVar()
     valid_ui = False
-    # entry = tk.Spinbox(root, textvariable=user_input, width=42, highlightthickness=2, highlightbackground="grey",
-    #                    highlightcolor="gold")
+    # entry = tk.Spinbox(
+    #     root, textvariable=user_input, width=42, highlightthickness=2,
+    #     highlightbackground="grey", highlightcolor="gold")
     entry = ttk.Combobox(root, textvariable=user_input, width=42)
     fix_conf(fix_entry=entry)
     entry.bind("<Return>", lambda x: save_and_exit())
@@ -184,25 +184,32 @@ class SyncCraft(Pk_Stray):
             try:
                 result = web_get(url, *args, **kwargs)
             except ConnectionRefusedError:
+                self.record_exc_info(True)
                 self.record_fx(
                     "[WinError 10061] 似乎 github.com 已拒绝连接。[ConnectionRefusedError]", tag=self.LOG_ERROR)
                 return 2
             except ConnectTimeout:
+                self.record_exc_info(True)
                 self.record_fx("加载缓慢。[ConnectTimeout]", tag=self.LOG_ERROR)
                 return 3
             except TimeoutError:
+                self.record_exc_info(True)
                 self.record_fx("连接超时。[TimeoutError]", tag=self.LOG_ERROR)
                 return 4
             except RemoteDisconnected:
+                self.record_exc_info(True)
                 self.record_fx("请求头的 User-Agent 错误。[RemoteDisconnected]", tag=self.LOG_ERROR)
                 return 5
             except ConnectionAbortedError:
+                self.record_exc_info(True)
                 self.record_fx("你的主机中的软件中止了一个已建立的连接。[ConnectionAbortedError]", tag=self.LOG_ERROR)
                 return 6
             except WebConnectionError:
+                self.record_exc_info(True)
                 self.record_fx("一般问题 [WebConnectionError]", tag=self.LOG_ERROR)
                 return 1
             except ConnectionError:
+                self.record_exc_info(True)
                 self.record_fx("一般问题 [ConnectionError]", tag=self.LOG_ERROR)
                 return 1
             # except Exception as e:
@@ -341,6 +348,7 @@ class SyncCraft(Pk_Stray):
             try:
                 self.conf_config = pk.loads(text.get(1.0, END))
             except json.decoder.JSONDecodeError:
+                self.record_exc_info(True)
                 msgbox.showinfo(local_title, "json 格式错误！", parent=win)
             else:
                 msgbox.showinfo(local_title, "已保存", parent=win)
@@ -680,6 +688,8 @@ class SyncCraft(Pk_Stray):
         ok_button.grid(row=30, column=0, columnspan=30, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
     def gui_settings(self):
+        local_title = "实例设置"
+
         def get_log(x, base) -> tuple[int, int]:
             ret = 0
             x_cp = x
@@ -735,10 +745,10 @@ class SyncCraft(Pk_Stray):
                 self.force_unlock = force_unlock_var.get()
 
                 self.upgrade_config()
-                self.global_window_destroyed(win)
+                self.global_window_destroyed(win, local_title, self)
 
         win = tk.Toplevel(self)
-        self.global_window_initialize(win, "实例设置", self)
+        self.global_window_initialize(win, local_title, self)
 
         view_frame = ttk.Labelframe(win)
         syncFactor_frame = ttk.Labelframe(win)
@@ -1011,7 +1021,8 @@ class SyncCraft(Pk_Stray):
         tool_menu.add_command(label=self.KEY_BOARD["check_admin"][2], command=self.KEY_BOARD["check_admin"][3],
                               accelerator=self.KEY_BOARD["check_admin"][1])
         tool_menu.add_checkbutton(label=self.KEY_BOARD["take_admin"][2], command=self.KEY_BOARD["take_admin"][3],
-                                  variable=self.at_admin_var, accelerator=self.KEY_BOARD["take_admin"][1])
+                                  variable=self.at_admin_var, accelerator=self.KEY_BOARD["take_admin"][1],
+                                  state=NORMAL if not self.destroyWhenExit else DISABLED)
         tool_menu.add_separator()
         tool_menu.add_cascade(label="高级设置", menu=senior_setting_menu)
         senior_setting_menu.bind(
@@ -1026,10 +1037,12 @@ class SyncCraft(Pk_Stray):
         senior_setting_menu.add_cascade(label="额外高级设置", menu=lab_menu)
         senior_setting_menu.add_cascade(label="Danger Zone", menu=danger_menu, foreground="red", activebackground="red")
         danger_menu.add_command(
-            label="快速锁定该目录[此操作在退出后不可逆]", foreground="red", activebackground="red",
-            command=lambda: self.preserve(self.SYNC_ROOT_FP, True, True))
+            label="快速锁定该目录[此操作在退出后不可逆]", state=DISABLED if self.destroyWhenExit else NORMAL,
+            foreground="red", activebackground="red",
+            command=lambda: self.preserve(self.SYNC_ROOT_FP, True, True, True))
         danger_menu.add_command(
-            label="解锁该目录", command=lambda: self.preserve(self.SYNC_ROOT_FP, None, False))
+            label="解锁该目录", state=DISABLED if self.destroyWhenExit else NORMAL,
+            command=lambda: self.preserve(self.SYNC_ROOT_FP, None, False, True))
         danger_menu.add_command(label="重置当前配置信息", command=self.clear_config)
         danger_menu.add_command(
             label="删除此实例", command=self.gui_logout, foreground="red", activebackground="red")
@@ -1081,7 +1094,8 @@ class SyncCraft(Pk_Stray):
             label="检查已绑定的按键", command=lambda: self.gui_key_view(self.KEY_BOARD, key_=lambda x: str(x)))
         view_menu.add_command(label="检查 conf_config 变量", command=lambda: self.gui_key_view(self.conf_config))
         view_menu.add_command(label=f"检查系统环境变量", command=lambda: self.gui_key_view(environ))
-        view_menu.add_command(label=f"检查 {self.TITLE} 变量", command=lambda: self.gui_key_view(dir_self))
+        view_menu.add_command(label=f"检查 {self.TITLE} 变量", command=lambda: self.gui_key_view(
+            dir_self, lambda item: f"{item} = {getattr(self, item)}"))
         view_menu.add_separator()
         view_menu.add_checkbutton(label="窗口置顶", variable=self.topmost, command=self.refresh)
         view_menu.add_checkbutton(label="窗口置顶（超级置顶）", activebackground="navy", foreground="navy",
@@ -1187,7 +1201,7 @@ if __name__ == "__main__":
     if len(argv) > 1 and (
             build or (pk.isdir(argv[index_]) or msgbox.askokcancel(str(argv[index_]), "指定的文件夹不存在\n是否创建"))):
         # print(argv[index_])
-        profile = (True, argv[index_])
+        profile = (True, argv[index_], False)
     else:
         profile = global_settings()
     if not profile[0]:

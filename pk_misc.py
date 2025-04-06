@@ -6,8 +6,8 @@ from time import time, localtime, strftime
 
 import simple_tools as st
 
-__version__ = "1.9.3"
-build_time = 1743609600
+__version__ = "1.9.4-beta1"
+build_time = 1743868800
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 global_settings_dirp = join(getenv("APPDATA"), TITLE)
@@ -59,6 +59,10 @@ def get_exec():
 
 def get_time(format_="%Y-%m-%dT%H.%M.%SZ"):
     return strftime(format_, localtime(time()))
+
+
+def get_exception_info():
+    return sys.exc_info()
 
 
 help_text = {

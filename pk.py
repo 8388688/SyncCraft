@@ -15,7 +15,7 @@ from shutil import copy2, copystat, disk_usage
 from subprocess import run as command
 from sys import exit as sys_exit, executable as sys_executable
 from time import time
-from traceback import format_exc
+from traceback import format_exception
 from typing import Literal, Callable, Mapping
 
 import colorama
@@ -26,7 +26,8 @@ import win32con
 import win32file
 import win32security
 
-from pk_misc import is_admin, __version__, windll, is_exec, TITLE, get_time, get_exec
+from pk_misc import (is_admin, __version__, windll, is_exec, TITLE, get_time,
+                     get_exec, get_exception_info)
 from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
 
 
@@ -288,8 +289,10 @@ class Peeker:  # TODO: 参考“点名器.py”
             self.conf_fiet = fopen(self.conf_fp, "w", encoding="utf-8")
         except PermissionError:
             self.record_fx(f"无法保存 - 权限不足", tag=self.LOG_ERROR)
+            self.record_exc_info(True)
         except OSError:
-            self.record_fx(f"无法保存 - 原因如下\n{format_exc()}", tag=self.LOG_ERROR)
+            self.record_fx(f"无法保存 - 原因如下", tag=self.LOG_ERROR)
+            self.record_exc_info(True)
         else:
             self.conf_fiet.write(dumps(self.conf_config))
             self.conf_fiet.close()
@@ -326,6 +329,7 @@ class Peeker:  # TODO: 参考“点名器.py”
                 i_mount = listmounts(i)
             except FileNotFoundError:
                 self.record_fx(f"文件系统错误 - {i} 无法映射到对应的挂载点", tag=self.LOG_ERROR)
+                self.record_exc_info(True)
                 return False
             else:
                 if realpath(drive) in map(lambda x: realpath(x, strict=False), i_mount):
@@ -338,14 +342,14 @@ class Peeker:  # TODO: 参考“点名器.py”
         try:
             return win32api.GetVolumeInformation(drive)[0]
         except pywintypes.error:
-            self.record_fx(f"执行出错：\n{format_exc()}", tag=self.LOG_ERROR)
+            self.record_exc_info(True)
             return None
 
     def __set_volume_label(self, drive, label=""):
         try:
             return win32file.SetVolumeLabel(drive, label)
         except pywintypes.error:
-            self.record_fx(f"执行出错：\n{format_exc()}", tag=self.LOG_ERROR)
+            self.record_exc_info(True)
 
     get_volume_label = __get_volume_label
     set_volume_label = __set_volume_label
@@ -418,6 +422,17 @@ class Peeker:  # TODO: 参考“点名器.py”
                 sys_exit(0)
             else:
                 return False
+
+    def record_exc_info(self, verbose=True):
+        exc_type, exc_value, exc_obj = get_exception_info()
+        self.record_fx("exception_type: \t%s" % exc_type, tag=self.LOG_ERROR)
+        self.record_fx("exception_value: \t%s" % exc_value, tag=self.LOG_ERROR)
+        self.record_fx("exception_object: \t%s" % exc_obj, tag=self.LOG_ERROR)
+        if verbose:
+            self.record_fx("======= FULL EXCEPTION =======", tag=self.LOG_ERROR)
+            for i in format_exception(exc_type, exc_value, exc_obj):
+                self.record_fx(i.rstrip(), tag=self.LOG_ERROR)
+            # self.record_fx("".join(traceback_format_tb(exc_[2])), tag=self.LOG_ERROR)
 
     def update_cursor(self):
         self.__cursors_src = list(self.cursors.keys())
@@ -797,16 +812,19 @@ class Peeker:  # TODO: 参考“点名器.py”
                                     copy2(sname, fname)
                                 except PermissionError:
                                     self.record_fx("拒绝访问", tag=self.LOG_ERROR)
+                                    self.record_exc_info(True)
                                 except UnicodeError:
                                     self.record_fx("文件编码错误", tag=self.LOG_ERROR)
+                                    self.record_exc_info(True)
                                 except FileNotFoundError:
                                     self.record_fx("找不到文件", tag=self.LOG_ERROR)
+                                    self.record_exc_info(True)
                                 except OSError:
                                     self.record_fx("系统错误：", tag=self.LOG_ERROR)
-                                    self.record_fx(format_exc())
+                                    self.record_exc_info(True)
                                 except Exception as e:
                                     self.record_fx("其他错误", tag=self.LOG_ERROR)
-                                    self.record_fx(format_exc())
+                                    self.record_exc_info(True)
                                 finally:
                                     yield sname, fname
                             else:
