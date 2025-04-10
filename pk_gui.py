@@ -570,7 +570,9 @@ class PeekerGui(pk.Peeker, Treasure):
   File "<stdin>", line 1, in <module>
 PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
 """)
-        self.run_until(figures=figure, end_time=time_, delay=1.0, save=True)
+        for i in self.run_until_gen(
+                figures=figure, end_time=time_, delay=1.0, save=True):
+            pass
         self.shut()
         self.record_fx("gui_run 命令成功完成")
         self.save()

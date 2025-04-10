@@ -6,8 +6,8 @@ from time import time, localtime, strftime
 
 import simple_tools as st
 
-__version__ = "1.9.4-beta2"
-build_time = 1743868800
+__version__ = "1.9.4"
+build_time = 1744214400
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 global_settings_dirp = join(getenv("APPDATA"), TITLE)

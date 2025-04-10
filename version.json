@@ -1,7 +1,13 @@
 {
-    "version": "1.9.4-beta2",
-    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.4-beta2",
+    "version": "1.9.4",
+    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.4",
     "updates": {
+        "1.9.4": {
+            "build_time": 1744214400,
+            "content": "- :recycle: 移除过时的代码：`Peeker().preserve_legacy`、。。。、。。。\n- :art: 『解锁存档』更新代码\n- :bug: 修复在非 NTFS 卷上调用 ACL_config 归档时报错的 bug\n- :children_crossing: 『运行』函数的 increment 现在可以自定义设置了。",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.4/SyncCraft_windowed.exe",
+            "stable": true
+        },
         "1.9.4-beta2": {
             "build_time": 1743868800,
             "content": "- :art: 更新『检查更新』界面",

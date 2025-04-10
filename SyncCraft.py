@@ -59,9 +59,11 @@ def fix_conf(del_invalid_path=False, fix_entry: ttk.Combobox | tk.Entry | ttk.En
     gs_config.update({"checkForBetaVersion": gs_config.get("checkForBetaVersion", False)})
 
 
-def global_settings():
-    profile_ch = 0
+def screenCapture():
+    pass
 
+
+def global_settings():
     def browse():
         file = askdirectory(mustexist=True)
         if file:
@@ -69,7 +71,7 @@ def global_settings():
             entry.insert(0, normpath(file))
 
     def save_and_exit():
-        nonlocal valid_ui, profile_ch
+        nonlocal valid_ui
         valid_ui = True
         for index in gs_config["archives"]:
             if exists(user_input.get()) and exists(index) and samefile(user_input.get(), index):
@@ -504,14 +506,15 @@ class SyncCraft(Pk_Stray):
             self.record_fx("继续同步")
             run_times_entry.config(state=DISABLED)
             delay_entry.config(state=DISABLED)
+            increment_entry.config(state=DISABLED)
             progress_win.config(state=DISABLED)
             windowed_win.config(state=DISABLED)
             btn1.config(text="暂停", state=NORMAL, command=lambda: pause_btn())
-            btn1.rowconfigure(4)
+            btn1.rowconfigure(5)
             btn2.config(text="终止", state=NORMAL, command=self.KEY_BOARD["terminated_sync"][3])
-            btn2.rowconfigure(4)
+            btn2.rowconfigure(5)
 
-            progress2.grid(row=3, column=0, columnspan=100, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+            progress2.grid(row=4, column=0, columnspan=100, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
         def pause_btn(pause_flag_set=None):
             if pause_flag_set is None:
@@ -530,6 +533,7 @@ class SyncCraft(Pk_Stray):
             self.record_fx("暂停或中止同步")
             run_times_entry.config(state=NORMAL)
             delay_entry.config(state=NORMAL)
+            increment_entry.config(state=NORMAL)
             progress_win.config(state=NORMAL)
             windowed_win.config(state=NORMAL)
             btn1.config(text="继续", state=NORMAL, command=lambda: warn(windowed_var.get()))
@@ -546,7 +550,8 @@ class SyncCraft(Pk_Stray):
             pause_th = threading.Thread(target=pause, daemon=True)
             pause_th.start()
 
-            for i in self.run_until_gen(run_times_var.get(), delay=delay_var.get()):
+            for i in self.run_until_gen(
+                    run_times_var.get(), delay=delay_var.get(), increment_delay=increment_var.get()):
                 # self.record_fx(i)
                 if pause_flag.get():
                     pause()
@@ -567,7 +572,11 @@ class SyncCraft(Pk_Stray):
                 self.record_fx("gui_run 操作取消")
             else:
                 self.conf_config["userdata"]["history"].update(
-                    {"run_times_ch": run_times_var.get(), "run_delay_ch": delay_var.get()})
+                    {"run_times_ch": run_times_var.get(),
+                     "run_delay_ch": delay_var.get(),
+                     "run_increment_ch": increment_var.get()
+                     }
+                )
                 if not (progress_var.get() or windowed_var.get()):
                     show_()
                     progress2.start(speed)
@@ -586,24 +595,31 @@ class SyncCraft(Pk_Stray):
         run_times_var.set(self.user_history.get("run_times_ch", 0))
         delay_var = tk.DoubleVar()
         delay_var.set(self.user_history.get("run_delay_ch", 0.0))
+        increment_var = tk.DoubleVar()
+        increment_var.set(self.user_history.get("run_increment_ch", 1.0))
         windowed_var = tk.BooleanVar()
         progress_var = tk.BooleanVar()
-        run_times_entry = self.get_digit_entry(win, ttk.Spinbox, from_=0, to=100, textvariable=run_times_var, width=30)
-        delay_entry = self.get_digit_entry(win, ttk.Spinbox, from_=0, to=10, textvariable=delay_var, increment=0.1,
-                                           width=30)
-        run_times_entry.grid(row=0, column=0, columnspan=2, padx=self.GLOBAL_PADX,
-                             pady=self.GLOBAL_PADY)
-        delay_entry.grid(row=1, column=0, columnspan=2, padx=self.GLOBAL_PADX,
-                         pady=self.GLOBAL_PADY)
+        run_times_entry = self.get_digit_entry(
+            win, ttk.Spinbox, from_=0, to=100, textvariable=run_times_var, width=30)
+        delay_entry = self.get_digit_entry(
+            win, ttk.Spinbox, from_=0, to=10, textvariable=delay_var, increment=0.1, width=30)
+        increment_entry = self.get_digit_entry(
+            win, ttk.Spinbox, from_=0, to=10, textvariable=increment_var, increment=0.1, width=30)
+        run_times_entry.grid(
+            row=0, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        delay_entry.grid(
+            row=1, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        increment_entry.grid(
+            row=2, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         progress_win = ttk.Checkbutton(win, text="销毁此窗口", variable=progress_var)
-        progress_win.grid(row=2, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        progress_win.grid(row=3, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         windowed_win = ttk.Checkbutton(win, text="销毁主窗口", variable=windowed_var)
-        windowed_win.grid(row=2, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        progress2 = ttk.Progressbar(win, mode="indeterminate", length=225, )
+        windowed_win.grid(row=3, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        progress2 = ttk.Progressbar(win, mode="indeterminate", length=225)
         btn1 = ttk.Button(win, style=self.BUTTON_STYLE_USE, width=8)
-        btn1.grid(row=4, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        btn1.grid(row=5, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         btn2 = ttk.Button(win, style=self.BUTTON_STYLE_USE, width=8)
-        btn2.grid(row=4, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
+        btn2.grid(row=5, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         hide_()
         btn1.config(text="运行")
 
@@ -1245,18 +1261,21 @@ if __name__ == "__main__":
         if not no_gui:
             g2c2.warn_nowindow(True, False)
         else:
-            g2c2.run_until(delay=1.0, save=True)
+            for i in g2c2.run_until_gen(delay=1.0, save=True):
+                pass
             g2c2.shut()
             # g2c2.record_fx("")
             g2c2.save()
     elif "/run_f" in argv:
         g2c2.gui_destroy(True)
         prei = argv.index("/run_f")
-        g2c2.run_until(figures=int(argv[prei + 1]), factor2="and")
+        for i in g2c2.run_until_gen(figures=int(argv[prei + 1]), factor2="and"):
+            pass
     elif "/run_t" in argv:
         g2c2.gui_destroy(True)
         prei = argv.index("/run_t")
-        g2c2.run_until(end_time=int(argv[prei + 1]), factor2="and")
+        for i in g2c2.run_until_gen(end_time=int(argv[prei + 1]), factor2="and"):
+            pass
     else:
         g2c2.gui_main()
         start_time.append(pk.time())

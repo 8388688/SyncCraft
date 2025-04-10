@@ -8,7 +8,8 @@ from __future__ import print_function
 import stat
 from builtins import open as fopen
 from json import loads, dumps
-from os import chdir, rename, remove, rmdir, getenv, listdir, listmounts, listvolumes, getcwd, stat as os_stat, chmod
+from os import (chdir, rename, remove, rmdir, getenv, listdir, listmounts,
+                listvolumes, getcwd, stat as os_stat, chmod, unlink)
 from os.path import exists, join, isfile, isdir, realpath, dirname
 # from psutil import disk_partitions
 from shutil import copy2, copystat, disk_usage
@@ -21,8 +22,8 @@ from typing import Literal, Callable, Mapping
 import colorama
 import ntsecuritycon
 import pywintypes
+import threading
 import win32api
-import win32con
 import win32file
 import win32security
 
@@ -464,9 +465,30 @@ class Peeker:  # TODO: 参考“点名器.py”
             self.save(ren=False)
 
     def delete(self, item, excludes=()):
+        def deletefile_api(x, mode: Literal[1, 2] = 1, retry=4):  # mode: 1 = file, 2 = folder
+            try:
+                if mode == 1:
+                    unlink(x)
+                elif mode == 2:
+                    rmdir(x)
+                else:
+                    raise ValueError(f"mode 参数只能是 1 or 2, 不能是 {mode}")
+            except ValueError:
+                self.record_exc_info(False)
+                return 1
+            except Exception as e:
+                self.record_exc_info(False)
+                self.record_fx(f"retry: {retry}")
+                self.preserve(x, False, False, self.force_unlock)
+                if retry > 0:
+                    deletefile_api(x, mode, retry - 1)
+                else:
+                    self.record_fx(f"Discard. ({x})")
+
         for i in fp_gen(item, abspath=1, files=True, folders=True, exclude=excludes,
-                        do_file=lambda x: remove(x), do_dir=lambda x: rmdir(x)):
-            self.preserve(i, False, False, self.force_unlock)
+                        do_file=lambda x: deletefile_api(x, 1),
+                        do_dir=lambda x: deletefile_api(x, 2),
+                        topdown=False):
             if isfile(i):
                 self.record_fx(f"delete file: {i}")
             elif isdir(i):
@@ -481,7 +503,10 @@ class Peeker:  # TODO: 参考“点名器.py”
             else:
                 self.record_fx(f"remove archive: {item}")
 
-    def unlock_arc(self, unlock=(), unlock_pre=True, delete=False, untie=True):
+    def unlock_arc(self, unlock=(), unlock_pre=True, delete=False, untie=True) -> int:
+        # 返回值为一个整数，表示【成功】解锁了多少个存档
+        # 注意当 untie 被设为 False 时，returns 总是与 param: unlock 的长度相等
+        #
         # 实例：unlock_pre=False, delete=False, untie=True - 浏览存档
         # untie = False 时，即使解锁失败，也将存档从列表中删除。
         # TODO: 虽然还有诸多 bug，但我不打算修改了
@@ -493,7 +518,7 @@ class Peeker:  # TODO: 参考“点名器.py”
                     self.preserve(i, False, False, self.force_unlock)
                     removed.append(i)
             else:
-                self.record_fx(f"Unlock Failed - Folder {i} does not exist!")
+                self.record_fx(f"Unlock Failed - Folder {i} does not exist!", tag=self.LOG_ERROR)
                 if not untie:
                     removed.append(i)
         for item in removed:
@@ -512,17 +537,20 @@ class Peeker:  # TODO: 参考“点名器.py”
                     break
             else:
                 self.synced_archives.remove(item)
+        length = len(removed)
         removed.clear()
+        return length
 
     def unlockall_cur(self, unlock_pre=True, delete=False, untie=True):
-        self.record_fx(f"{"解锁" if untie else "解除关联（解绑）"} {len(self.synced_archives)} 个存档" + (
+        self.record_fx(f"{"解锁" if untie else "解除关联（解绑）"}存档" + (
             "并删除" if delete else ""))
         tmp = []
+        length = 0
         for i in self.cursors:
             tmp += self.cursors[i].get("archives", [])
-        self.unlock_arc(tmp, unlock_pre=unlock_pre, delete=delete, untie=untie)
-        self.unlock_arc(self.synced_archives, unlock_pre=unlock_pre, delete=delete, untie=untie)
-        self.record_fx(f"{self.unlockall_cur.__name__} 命令成功完成")
+        length += self.unlock_arc(tmp, unlock_pre=unlock_pre, delete=delete, untie=untie)
+        length += self.unlock_arc(self.synced_archives, unlock_pre=unlock_pre, delete=delete, untie=untie)
+        self.record_fx(f"{self.unlockall_cur.__name__} 共计处理成功 {length} 个存档")
 
     def attr_config(self, fname, hidden: bool | None = None):
         self.record_fx(f"调用 {self.attr_config.__name__}({fname}) 函数，保护方向：{hidden}")
@@ -564,7 +592,13 @@ class Peeker:  # TODO: 参考“点名器.py”
             new_sd = win32security.GetNamedSecurityInfo(
                 fname, win32security.SE_FILE_OBJECT, win32security.DACL_SECURITY_INFORMATION)
             dacl = new_sd.GetSecurityDescriptorDacl()
+
+        if dacl is None:
+            self.record_fx(f"{fname} 所在驱动器似乎不支持 NTFS 安全权限", tag=self.LOG_ERROR)
+            return 2
+
         if force and preserve:
+            # new_sd.SetAccessRuleProtection(True, False)
             self.record_fx(f"设置文件所有者 - 管理员组")
             new_sd.SetSecurityDescriptorOwner(system_user, 0)
             new_sd.SetSecurityDescriptorOwner(admins, 0)
@@ -626,29 +660,6 @@ class Peeker:  # TODO: 参考“点名器.py”
                 win32security.SetNamedSecurityInfo(
                     fname, win32security.SE_FILE_OBJECT,
                     win32security.DACL_SECURITY_INFORMATION, None, None, dacl, None)
-
-    def preserve_legacy(self, fname, hidden: bool | None, preserve: bool | None, force: bool = True):
-        # hidden 和 preserve: True = 设置保护，False = 取消保护，None = 不保护
-        # force: 强制模式
-        self.record_fx(f"{self.record_fx.__name__}: {fname=}")
-
-        if preserve is not None:
-            """
-            import win32process, win32security
-            h = win32process.GetProcessWindowStation()
-            dacl_2 = win32security.GetUserObjectSecurity(h, self.USER_SECURITY_INFO)
-            """
-
-            if dacl is not None:
-                # sd.SetAccessRuleProtection(True, False)
-                pass
-                # dacl.AddAccessAllowedAceEx(
-                #     win32security.ACL_REVISION_DS,
-                #     (win32security.OBJECT_INHERIT_ACE | win32security.CONTAINER_INHERIT_ACE |
-                #      win32security.INHERITED_ACE),
-                #     ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_EXECUTE, userx_sid)
-            else:
-                self.record_fx(f"{fname} 所在驱动器似乎不支持 NTFS 安全权限", tag=self.LOG_ERROR)
 
     def preserve(self, fname, hidden: bool | None, preserve: bool | None, force: bool = False):
         self.record_fx(f"调用 {self.preserve.__name__} 函数, {fname=}, {hidden=}, {preserve=}, {force=}")
@@ -943,11 +954,17 @@ class Peeker:  # TODO: 参考“点名器.py”
         self.sync_flag = False
 
     def run_until(self, *args, **kwargs):
-        self.record_fx("调用", self.run_until.__name__, "函数")
+        import warnings
+        comment: str = (f"{self.run_until.__name__} 预计在 1.9.4 版本中移除\n"
+                        f"使用 self.run_until_gen 函数代替 {self.run_until.__name__}")
+        warnings.warn(f"{comment}", DeprecationWarning, stacklevel=4)
+        self.record_fx(comment)
         for i in self.run_until_gen(*args, **kwargs):
             pass
 
-    def run_until_gen(self, figures: int = INF, end_time: float = INF, delay: float = 0.0, factor2=AND, save=False):
+    def run_until_gen(
+            self, figures: int = INF, end_time: float = INF, delay: float = 0.0,
+            increment_delay: float = 0.0, factor2=AND, save=False):
         # 重复执行 run_once() 直到所给条件不成立
         # 当条件被设为 INF 时，意味着永远为真。
         # 没错，不带任何参数的 `run_until()` 就是一个死循环
@@ -961,17 +978,21 @@ class Peeker:  # TODO: 参考“点名器.py”
 
         done = __can_peek()
         while done:
-            for j in self.run_once(save=save):
+            for j in self.run_once(increment_delay=increment_delay, save=save):
                 if self.sync_flag:
                     yield j
                 else:
                     break
-            done = __can_peek()
-            self.record_fx(f"{self.run_until_gen.__name__}: 等待 {delay} 秒")
-            self.wait_fx(delay)
+                    # return 0
+            if self.sync_flag:
+                done = __can_peek()
+                self.record_fx(f"{self.run_until_gen.__name__}: 等待 {delay} 秒")
+                self.wait_fx(delay)
+            else:
+                break
 
         self.sync_flag = True
-        self.record_fx("run_until: 同步旗标已解锁")
+        self.record_fx("run_until_gen: 同步旗标已解锁")
 
 
 if __name__ == "__main__":
