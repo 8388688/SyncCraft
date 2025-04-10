@@ -4,21 +4,28 @@
 
 # 更新历史
 
-## 1.9.4-beta2（2025-04-xx 发布）
+## 1.9.4（2025-04-10 发布）
+
+- :recycle: 移除过时的代码：`Peeker().preserve_legacy`、。。。、。。。
+- :art: 『解锁存档』更新代码
+- :bug: 修复在非 NTFS 卷上调用 ACL_config 归档时报错的 bug
+- :children_crossing: 『运行』函数的 increment 现在可以自定义设置了。
+
+## 1.9.4-beta2（2025-04-06 发布）
 
 - :art: 更新『检查更新』界面
 
 ## 1.9.4-beta1（2025-04-06 发布）
 
-- :lipstick: 换用更高清的图标
+- :bento: 换用更高清的图标
 - :art: 使用更好的异常显示功能
 - :bug: 修复使用临时身份『以管理员权限运行』时报错
 
 ## 1.9.3（2025-04-03 发布）
 
 - :fire: pk_gui.py 菜单中移除『终端执行任意命令\(system\)』选项，因为使用该函数经常会莫名其妙地出现错误。
-- :fire: 进一步移除『日志自动滚屏』的功能，预计在程序全部改写 by PyQt 之后重新加入。
 - :fire: 移除一些过时的代码如 `record_register_old`。
+- :hankey: 进一步移除『日志自动滚屏』的功能，预计在程序全部改写 by PyQt 之后重新加入。
 - :art: 现在使用更好的 NTFS 安全权限保护的方法，添加『强制模式』可选项。
 - :art: record_register 增加『`multiline`（多行模式）』参数，默认关闭，1.9.2 之前的版本记录日志默认为多行。
 - :rocket: 菜单栏微调。
@@ -64,7 +71,7 @@
 修正日志格式，代码风格
 
 - Modified: 启动界面的 GUI
-- Modified: 导出配置文件的默认文件名
+- Modified: 配置文件的默认文件名：`pk_config.json` -> `Sync.sc_conf`
 - Fixed: 修正“以管理员权限运行”函数时，报 Failed to Remove Temporary Directory... 警告
 - Deleted: 移除对 pyperclip, wmi 的依赖
 - Deleted: 移除用 win32api 写的 topmost_st 函数，移除对 pythoncom, win32con, win32gui, win32com 的依赖
