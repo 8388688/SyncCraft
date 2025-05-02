@@ -1,4 +1,4 @@
-import colorama
+import colorlog, colorama
 import logging
 from abc import ABC, abstractmethod
 from typing import AnyStr
@@ -21,12 +21,23 @@ class BaseLogging(logging.Logger):
 
     def __init__(self, name: str):
         super().__init__(name)
-        colorama.init(autoreset=True)
+        logging.addLevelName(self.L_NOTICE, "NOTICE")  # 设置自定义日志级别的名称
+        logging.addLevelName(self.L_NOTICE, "NOTICE")  # 设置自定义日志级别的名称
         self.setLevel(logging.DEBUG)
         self.general_formatter = logging.Formatter(
             "[%(asctime)s | %(name)s]%(levelname)s: %(message)s",
             datefmt=self.ASC_TIME_FORMAT,
         )
+        self.color_formatter = colorlog.ColoredFormatter(
+        '%(log_color)s%(levelname)s: %(message)s',
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'green',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': "red,bg_white",
+        }
+    )
 
         # 使用FileHandler输出到文件
         self.local_log = logging.FileHandler("G:\\Temp\\log.txt", encoding="utf-8")
@@ -44,13 +55,16 @@ class BaseLogging(logging.Logger):
         self.addHandler(self.local_log)
         self.addHandler(self.global_log)
 
-    def log(self, *__text, tag, sep=" ", end="\n"):
-        msg = sep.join(str(i) for i in __text) + end
-        super().log(level=tag, msg=msg, *tuple())
+    # def log(self, *__text, tag, sep=" ", end="\n"):
+        # msg = sep.join(str(i) for i in __text) + end
+        # super().log(level=tag, msg=msg, *tuple())
 
-    def notice(self, *__text, **kwargs):
+    def _notice(self, msg, *args, **kwargs):
         if self.isEnabledFor(self.L_NOTICE):
-            self.log(*__text, tag=self.L_NOTICE, **kwargs)
+            self.log(self.L_NOTICE, msg, *args, **kwargs)
+
+    notice = _notice
+
 
 
 class Archiver:
@@ -86,5 +100,7 @@ if __name__ == '__main__':
     g2.setLevel(3)
     print(g2.getEffectiveLevel())
     g = BaseLogging("DFG")
+    g.setLevel(8)
     g.debug("CNM")
     g.error("CNNH")
+    g.notice("NOTICE")
