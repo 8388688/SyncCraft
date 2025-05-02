@@ -1,7 +1,7 @@
 import colorlog, os
 import logging
 from abc import ABC, abstractmethod
-from typing import AnyStr, Literal
+from typing import Literal
 
 
 class BaseLogging(logging.Logger):
@@ -67,7 +67,7 @@ class BaseLogging(logging.Logger):
     def notice(self, msg, *args, **kwargs):
         if self.isEnabledFor(self.L_NOTICE):
             self._log(self.L_NOTICE, msg, args, **kwargs)
-    
+
     def commit(self):
         self.local_log.flush()
         self.global_log.flush()
@@ -89,7 +89,7 @@ class BaseSynchronization(ABC):
     @abstractmethod
     def run(self):
         raise NotImplementedError("子类必须实现 run 方法")
-    
+
     def get_factor(self, file_path, return_type: Literal["code", "int"]="code") -> dict | int:
         # return_type: "code" | "dict"
         #
@@ -182,7 +182,7 @@ class SolidSync(BaseSynchronization):
     sync_type = "solid"
 
     def run(self):
-        
+        pass
 
 
 class CursorSync(BaseSynchronization):
