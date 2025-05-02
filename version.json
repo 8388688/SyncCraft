@@ -1,0 +1,78 @@
+{
+    "version": "1.9.4",
+    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.4",
+    "updates": {
+        "1.9.4": {
+            "build_time": 1744214400,
+            "content": "- :recycle: 移除过时的代码：`Peeker().preserve_legacy`、。。。、。。。\n- :art: 『解锁存档』更新代码\n- :bug: 修复在非 NTFS 卷上调用 ACL_config 归档时报错的 bug\n- :children_crossing: 『运行』函数的 increment 现在可以自定义设置了。",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.4/SyncCraft_windowed.exe",
+            "stable": true
+        },
+        "1.9.4-beta2": {
+            "build_time": 1743868800,
+            "content": "- :art: 更新『检查更新』界面",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.4-beta2/SyncCraft_windowed.exe",
+            "stable": false
+        },
+        "1.9.4-beta1": {
+            "build_time": 1743868800,
+            "content": "- :lipstick: 换用更高清的图标\n- :art: 使用更好的异常显示功能\n- :bug: 修复使用临时身份『以管理员权限运行』时报错",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.4-beta1/SyncCraft_windowed.exe",
+            "stable": false
+        },
+        "1.9.3": {
+            "build_time": 1743609600,
+            "content": "- :fire: pk_gui.py 菜单中移除『终端执行任意命令\\(system\\)』选项，因为使用该函数经常会莫名其妙地出现错误。\n- :fire: 进一步移除『日志自动滚屏』的功能，预计在程序全部改写 by PyQt 之后重新加入。\n- :fire: 移除一些过时的代码如 `record_register_old`。\n- :art: 现在使用更好的 NTFS 安全权限保护的方法，添加『强制模式』可选项。\n- :art: record_register 增加『`multiline`（多行模式）』参数，默认关闭，1.9.2 之前的版本记录日志默认为多行。\n- :rocket: 菜单栏微调。\n- :sparkles: 『使用临时身份』勾选后，关闭时会自动删除实例产生的所有文件。\n- :construction: PyQt 改写中. . . . . .",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.3/SyncCraft_windowed.exe",
+            "stable": true
+        },
+        "1.9.2": {
+            "build_time": 1741536000,
+            "content": "- :construction: 不再允许用户自行选择『日志自动滚屏』，默认开启。\n- :bug: 新创建同步根目录时，因部分配置文件缺省而报 KeyError 错误的问题。\n- :sparkles: 『检查更新』可以自行选择更新到正式版还是测试版。",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.2/SyncCraft_windowed.exe",
+            "stable": true
+        },
+        "1.9.2-beta2": {
+            "build_time": 1741449600,
+            "content": "\n**1.10 版本计划用 pyQt6 全面改写 GUI 框架**\n\n- :art: 计划移除自动滚屏按钮（以后强制自动滚屏）\n- :sparkles: 自主选择工作目录\n- :bug: 修复托盘图标在程序退出后无法自行消失，仍留在托盘中的 bug",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.2-beta2/SyncCraft_windowed.exe",
+            "stable": false
+        },
+        "1.9.2-beta1": {
+            "build_time": 1740931200,
+            "content": "- :bug: 修复资源文件路径错误的 bug\n- :art: 修正部分间接导入模块的问题",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.2-beta1/SyncCraft.exe",
+            "stable": false
+        },
+        "1.9.1": {
+            "build_time": 1740844800,
+            "content": "- Deleted: 移除 `file_op.py`\n- 修改『今日人品』的生成代码\n- 移除对 win32process 的依赖\n- 移除对 getpass 的依赖\n- 移除对 socket 的依赖\n- 在『编辑配置文件』中，将 disabledWhenSubWindow 将 true 改为 false 时，保存并返回窗口时，会使主窗口再也无法获得响应。\n- 用户可以自定义设置工作目录\n- 在线更新加入『gh-pages』打开页面并在更新内容之后紧跟『下载链接』",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.1/SyncCraft.exe",
+            "stable": true
+        },
+        "1.9.0": {
+            "build_time": 1740758400,
+            "content": "- Modified: 启动界面的 GUI\n- Modified: 导出配置文件的默认文件名\n- Fixed: 修正“以管理员权限运行”函数时，报 Failed to Remove Temporary Directory... 警告\n- Deleted: 移除对 pyperclip 的依赖\n- Deleted: 移除用 win32api 写的 topmost_st 函数，移除对 pythoncom, win32con, win32gui, win32com 的依赖\n- Modified: 移除启动界面的“启动完成后退出”文本框",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.0/SyncCraft.exe",
+            "stable": true
+        },
+        "1.8.1": {
+            "build_time": 1738339200,
+            "content": "更新实例设置和全局设置的界面\n完成右键弹出菜单的“复制”功能",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.8.1/SyncCraft.exe",
+            "stable": true
+        },
+        "1.8": {
+            "build_time": 1737648000,
+            "content": "加入托盘图标 + 在线更新",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.8/SyncCraft.exe",
+            "stable": true
+        },
+        "1.7.3": {
+            "build_time": 1734624000,
+            "content": "优化“基础设置”的图形界面\n“运行”模块增加“暂停”功能",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.7.3/SyncCraft.exe",
+            "stable": true
+        }
+    }
+}
