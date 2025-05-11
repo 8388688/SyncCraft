@@ -1,7 +1,19 @@
-import colorlog, os
+import colorlog, os, traceback
 import logging
 from abc import ABC, abstractmethod
-from typing import Literal
+from typing import Literal, AnyStr, MutableSequence
+import simple_tools as st
+from sync_api import *
+
+
+__version__ = "1.9.4"
+build_time = 1744214400
+TITLE = "SyncCraft"
+rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
+global_settings_dirp = os.path.join(os.getenv("APPDATA"), TITLE)
+st.safe_md(global_settings_dirp, quiet=True)
+global_settings_fp = os.path.join(global_settings_dirp, "globalsettings.sc_json")
+
 
 
 class BaseLogging(logging.Logger):
@@ -73,24 +85,41 @@ class BaseLogging(logging.Logger):
         self.global_log.flush()
 
 
-class Archiver:
-    """存档管理"""
-    pass
+_root = BaseLogging("Temporary")
+
+
+# class Archiver:
+#     """存档管理"""
+#     pass
 
 
 class BaseSynchronization(ABC):
-    sync_type = ""  # 子类必须重写 sync_type 方法，并且此方法对于实例来说为只读
+    sync_type = ""  # 子类必须重写 sync_type 类变量，并且此方法对于实例来说为只读
     def __init__(self, src, dst):
         self.src = src
         self.dst = dst
 
-        self.archives = []
+        self.label_blacklist: MutableSequence = []
+        self.label_whitelist: MutableSequence = []
+        self.volId_blacklist: MutableSequence = []
+        self.volId_whitelist: MutableSequence = []
+        self.file_blacklist: MutableSequence = []
+        self.file_whitelist: MutableSequence = []
+
+        self.archives: MutableSequence = []
 
     @abstractmethod
     def run(self):
         raise NotImplementedError("子类必须实现 run 方法")
+    
+    def get(self, attribute: AnyStr, default=None):
+        if hasattr(self, attribute):
+            return getattr(self, attribute)
+        else:
+            return default
+        
 
-    def get_factor(self, file_path, return_type: Literal["code", "int"]="code") -> dict | int:
+    def get_factor(self, file_path=None, return_type: Literal["code", "int"]="code") -> dict | int:
         # return_type: "code" | "dict"
         #
         # 专门针对驱动器同步的增强
@@ -106,6 +135,8 @@ class BaseSynchronization(ABC):
         # 第 2^7 位：src 所在挂载点的卷标是否存在于【白】名单
         cur_exists_ch = 0
         cur_exists_list = dict()
+        if file_path is None:
+            file_path = self.src
 
         if os.path.exists(file_path):
             cur_exists_ch += 1 * 2 ** 0  # m * n ** p format: 以 n 进制表示的数字串，第 p 位数字为 m
@@ -114,8 +145,8 @@ class BaseSynchronization(ABC):
             cur_exists_ch += 0
             cur_exists_list.update({"exists": False})
 
-        tmp = self.__label2mountId(file_path)
-        self.record_fx(f"{file_path} 对应的卷 ID：{tmp}")
+        tmp = label2mountId(file_path)
+        _root.info(f"{file_path} 对应的卷 ID: {tmp}")
         if tmp and tmp != file_path:
             cur_exists_ch += 1 * 2 ** 1
             cur_exists_list.update({"ismount": True})
@@ -123,7 +154,7 @@ class BaseSynchronization(ABC):
             cur_exists_ch += 0
             cur_exists_list.update({"ismount": False})
 
-        id_blk = self.cursors[file_path].get("volumeId_blacklist", self.profileSettings.get("volumeId_blacklist", []))
+        # id_blk = self.cursors[file_path].get("volumeId_blacklist", self.profileSettings.get("volumeId_blacklist", []))
         if tmp and (not id_blk or tmp in id_blk):
             cur_exists_ch += 1 * 2 ** 4
             cur_exists_list.update({"volumeId_in_blacklist": True})
@@ -141,19 +172,19 @@ class BaseSynchronization(ABC):
         if self.cursors[file_path]["lastrun"] != tmp:
             cur_exists_ch += 0
             cur_exists_list.update({"samemount": False})
-            self.record_fx(f"检测到不同的卷序列号 - {self.cursors[file_path]['lastrun']} ≠ {tmp}")
+            _root.info(f"检测到不同的卷序列号 - {self.cursors[file_path]['lastrun']} ≠ {tmp}")
             self.__rename_and_register(self.cursors[file_path]["dst"], file_path)
         else:
             cur_exists_ch += 1 * 2 ** 3
             cur_exists_list.update({"samemount": True})
-            self.record_fx(f"相同的挂载点 - {tmp}")
+            _root.info(f"相同的挂载点 - {tmp}")
         self.cursors[file_path].update({"lastrun": tmp})
-        # self.record_fx(f"{cur_exists_list}")
+        # _root.info(f"{cur_exists_list}")
         if cur_exists_list.get("exists", False):
             tmp2 = self.__get_volume_label(file_path)
-            self.record_fx(f"[{file_path}] 的卷标是 [{tmp2}]")
+            _root.info(f"[{file_path}] 的卷标是 [{tmp2}]")
         else:
-            self.record_fx(f"检查卷标时出现错误 - {file_path} 文件不存在", tag=self.LOG_ERROR)
+            _root.error(f"检查卷标时出现错误 - {file_path} 文件不存在")
             tmp2 = False
         lab_blk = self.get_fromkey("label_blacklist", file_path)
         if not lab_blk or tmp2 in lab_blk:
@@ -169,8 +200,8 @@ class BaseSynchronization(ABC):
             cur_exists_ch += 0
             cur_exists_list.update({"label_in_whitelist": False})
 
-        self.record_fx(f"{file_path} 编码的数字串 - {"%.16d" % int(dec_to_r_convert(cur_exists_ch, 2, ))}")
-        self.record_fx(f"{file_path} 字典 - {cur_exists_list}")
+        _root.info(f"{file_path} 编码的数字串 - {"%.16d" % int(st.dec_to_r_convert(cur_exists_ch, 2, ))}")
+        _root.info(f"{file_path} 字典 - {cur_exists_list}")
         if return_type == "code":
             return cur_exists_ch
         else:
@@ -197,5 +228,38 @@ class DeviceSync(BaseSynchronization):
     sync_type = "device"
 
 
+def record_exc_info(verbose=False):
+    exc_type, exc_value, exc_obj = get_exception_info()
+    _root.error("exception_type: \t%s" % exc_type)
+    _root.error("exception_value: \t%s" % exc_value)
+    _root.error("exception_object: \t%s" % exc_obj)
+    if verbose:
+        _root.error("======= FULL EXCEPTION =======")
+        for i in traceback.format_exception(exc_type, exc_value, exc_obj):
+            _root.error(i.rstrip())
+        # _root.error("".join(traceback_format_tb(exc_[2])))
+
+
+def label2mountId(drive):
+    for i in os.listvolumes():
+        # os.path.samefile(path1, path2)
+        try:
+            i_mount = os.listmounts(i)
+        except FileNotFoundError:
+            _root.error(f"文件系统错误 - {i} 无法映射到对应的挂载点")
+            record_exc_info(True)
+            return False
+        else:
+            if os.path.realpath(drive) in map(lambda x: os.path.realpath(x, strict=False), i_mount):
+                return i
+    else:
+        # raise FileNotFoundError("指定的驱动器不存在")
+        return drive
+
+
 if __name__ == "__main__":
-    pass
+    d = SolidSync("C:\\", "G:\\Temp\\CC")
+    d.label_blacklist = [1, 3, 2]
+    print(d.get("label_blacklist", "dfdsfg"))
+    print(d.get("FGG"))
+    print(d.get("dst", "LMN"))

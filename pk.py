@@ -329,6 +329,10 @@ class Peeker:
         return tmp
 
     def __label2mountId(self, drive):
+        # 已在 sync_con 改写
+        import warnings
+        warnings.warn("已在 sync_con 改写", PendingDeprecationWarning, stacklevel=4)
+
         for i in listvolumes():
             # os.path.samefile(path1, path2)
             try:
@@ -435,6 +439,10 @@ class Peeker:
                 return False
 
     def record_exc_info(self, verbose=True):
+        # 已在 sync_con.py 改写
+        import warnings
+        warnings.warn("已在 sync_con.py 改写", PendingDeprecationWarning, stacklevel=4)
+        
         exc_type, exc_value, exc_obj = get_exception_info()
         self.record_fx("exception_type: \t%s" % exc_type, tag=self.LOG_ERROR)
         self.record_fx("exception_value: \t%s" % exc_value, tag=self.LOG_ERROR)
