@@ -13,7 +13,8 @@
             "build_time": 1744214400,
             "content": "- :recycle: 移除过时的代码：`Peeker().preserve_legacy`、。。。、。。。\n- :art: 『解锁存档』更新代码\n- :bug: 修复在非 NTFS 卷上调用 ACL_config 归档时报错的 bug\n- :children_crossing: 『运行』函数的 increment 现在可以自定义设置了。",
             "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.4/SyncCraft_windowed.exe",
-            "stable": true
+            "stable": true,
+            "sha256": "509cc92758fda6d39e441ef870faa61ff130cc109ee83c2fdefd29ef6557e84a"
         },
         "1.9.4-beta2": {
             "build_time": 1743868800,
