@@ -18,7 +18,7 @@ from traceback import format_exception
 from typing import Sequence, Callable, Set, Mapping
 
 import pystray
-from PIL import Image, ImageGrab
+from PIL import Image
 
 import pk
 import simple_tools as st
@@ -142,9 +142,9 @@ class PeekerGui(pk.Peeker, Treasure):
 
     LOG_COLORS = {
         pk.Peeker.LOG_INFO: "black",
-        pk.Peeker.LOG_NOTICE: "#2299ff",
         pk.Peeker.LOG_WARNING: "#C19C00",
         pk.Peeker.LOG_ERROR: "red",
+        # pk.Peeker.LOG_DEBUG: "green",
         pk.Peeker.LOG_DEBUG: "#009900",
     }
 
@@ -242,6 +242,8 @@ class PeekerGui(pk.Peeker, Treasure):
             "refresh": ("<F5>", "F5", "刷新", lambda x=None: self.refresh(),),
             "terminate": ("<Control-Alt-F2>", "Ctrl+Alt+F2", "强行终止", lambda x=None: self.join_cmdline(
                 lambda: self.destroy(), lambda: pk.sys_exit(-1))()),
+            "exit": (
+                "<Control-F4>", "Ctrl+F4", "放弃保存并退出", lambda x=None: self.gui_destroy(True, save=False)),
             "save_exit": (
                 "<Control-q>", "Ctrl+Q", "保存并退出", lambda x=None: self.gui_destroy(True, save=True)),
             "check_admin": (
@@ -343,10 +345,10 @@ class PeekerGui(pk.Peeker, Treasure):
             if self.gui_live:
                 self.log_box.see(self.log_insert_mode.get())
         except AttributeError:
-            print(f"AttributeError!\t{text_1}")
+            print(f"AttributeError!    {text_1}")
             # print(format_exc())
         except tk.TclError:
-            print(f"TclError!\t{text_1}")
+            print(f"TclError!    {text_1}")
             # print(format_exc())
         else:
             if self.gui_live:

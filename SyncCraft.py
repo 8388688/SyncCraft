@@ -1,7 +1,6 @@
 import json.decoder
-import numpy as np
 from http.client import RemoteDisconnected
-from os import chdir, remove, rename, popen, mkdir
+from os import chdir, remove, rename, popen, system
 from os.path import dirname, normpath, samefile, isdir, abspath, isabs
 from tkinter.filedialog import askdirectory
 from webbrowser import open as webbopen
@@ -12,22 +11,11 @@ from requests.exceptions import ConnectTimeout, ConnectionError as WebConnection
 from pk_gui import *
 from pk_misc import (
     global_settings_dirp, global_settings_fp, __version__,
-    build_time, get_exec, is_exec, rate_list, sc_notate_auto
+    build_time, get_exec, is_exec, rate_list, sc_notate_auto, md5sum_2, get_hms
 )
 
+
 # from distutils import *
-original_stderr = stderr
-
-
-def fix_stderr(mode: bool):
-    global stderr, original_stderr
-    print(stderr, original_stderr)
-    if mode:
-        original_stderr = stderr
-        stderr = open(join(global_settings_dirp, "debug_stderr.txt"), "a", encoding="utf-8", )
-    else:
-        stderr.close()
-        stderr = original_stderr
 
 
 def get_conf() -> dict:
@@ -69,6 +57,10 @@ def fix_conf(del_invalid_path=False, fix_entry: ttk.Combobox | tk.Entry | ttk.En
         )
     gs_config.update({"autoUpdate": gs_config.get("autoUpdate", None)})
     gs_config.update({"checkForBetaVersion": gs_config.get("checkForBetaVersion", False)})
+
+
+def screenCapture():
+    pass
 
 
 def global_settings():
@@ -260,7 +252,7 @@ class SyncCraft(Pk_Stray):
                     f"https://github.com/8388688/SyncCraft/releases/download/{updatable}/{TITLE}.exe", stream=True)
             if isinstance(req, int):
                 self.record_fx(f"网络异常，无法更新 (Error {response})")
-                return
+                return 
             content_size = int(req.headers.get("content-length", -1))
             if req.status_code == 200 and content_size != -1:
                 if not silent:
@@ -275,7 +267,7 @@ class SyncCraft(Pk_Stray):
                         size += len(chunk)
                         tmp = (f"已下载 {sc_notate_auto(size)}/"
                                f"{sc_notate_auto(content_size)}"
-                               f"\tspeed: {sc_notate_auto(size / (time.time() - start_t))}")
+                               f"\ttime elapsed: {get_hms(content_size / (size / (time.time() - start_t)))}s")
                         if not silent:
                             dl_bar.config(value=size // chunk_size)
                             label1.config(text=f"{size / content_size * 100:.2f}%")
@@ -286,11 +278,21 @@ class SyncCraft(Pk_Stray):
                             if count_ch % 10 == 0:
                                 self.record_fx(tmp)
 
-                exec_bak = get_exec() + ".old"
-                if exists(exec_bak):
-                    remove(exec_bak)
-                rename(get_exec(), exec_bak)
-                rename(get_exec() + ".tmp", get_exec())
+                
+                down_content_val = md5sum_2(get_exec() + ".tmp", "sha256")
+                if sha256_val != down_content_val:
+                    self.record_fx(f"下载错误 - 验证下载的文件不完整", tag=self.LOG_ERROR)
+                    return 3
+                else:
+                    if sha256_val is None:
+                        self.record_fx("无法验证下载的文件是否完整，请谨慎打开。", tag=self.LOG_WARNING)
+                    else:
+                        self.record_fx("验证下载 - 文件完整！")
+                    exec_bak = get_exec() + ".old"
+                    if exists(exec_bak):
+                        remove(exec_bak)
+                    rename(get_exec(), exec_bak)
+                    rename(get_exec() + ".tmp", get_exec())
             else:
                 self.record_fx(f"下载错误！{response.status_code=}, {content_size=}", tag=self.LOG_ERROR)
             tmp = "更新完成，用时%.1fs\n你是否现在重启 %s" % (time.time() - start_t, TITLE)
@@ -325,7 +327,7 @@ class SyncCraft(Pk_Stray):
         updatable = up_data[0]
 
         # current_date = mktime(strptime("", "%Y-%m-%d"))
-        tmp = ""
+        tmp, sha256_val = "", ""
         buildTime = up_data[1]
         for i in up_content.keys():
             if up_content[i]["build_time"] > buildTime and (
@@ -333,7 +335,8 @@ class SyncCraft(Pk_Stray):
                 updatable = i
                 buildTime = up_content[i]["build_time"]
                 # current_date = response_json[i]["date"]
-                tmp = f"更新内容：\n{up_content[i]["content"]}\n\n下载链接：\n{response_json["gh-page"]}\n"
+                tmp = f"更新内容：\n{up_content[i]["content"]}\n\n下载链接:\n{response_json["gh-page"]}\n"
+                sha256_val = up_content[i].get("sha256", None)
 
         if updatable == up_data[0]:
             self.record_fx("暂无更新")
@@ -673,10 +676,8 @@ class SyncCraft(Pk_Stray):
         gs_conf = get_conf()
         silent_update = tk.BooleanVar()
         check_for_beta_ver_var = tk.BooleanVar()
-        debug_stderr_var = tk.BooleanVar()
 
         silent_update.set(gs_conf.get("silent_update", True))
-        debug_stderr_var.set(gs_conf.get("debug_stderr", True))
         check_for_beta_ver_var.set(gs_conf.get("checkForBetaVersion", False))
 
         def save():
@@ -686,11 +687,9 @@ class SyncCraft(Pk_Stray):
             gs_conf.update({
                 "autoUpdate": autoupdate_rainbow[update_combobox.get()],
                 "checkForBetaVersion": check_for_beta_ver_var.get(),
-                "debug_stderr": debug_stderr_var.get(),
             })
             put_conf(gs_conf)
             gs_config = gs_conf
-            fix_stderr(debug_stderr_var.get())
             #####################################################
 
         tip_f = ttk.Label(gs_frame, text="启动时检查更新")
@@ -698,8 +697,6 @@ class SyncCraft(Pk_Stray):
             gs_frame, text=self.KEY_BOARD["check_for_updates"][2], style=self.BUTTON_STYLE_USE,
             command=self.KEY_BOARD["check_for_updates"][3])
         check_for_updates_chbtn = ttk.Checkbutton(gs_frame, text="静默更新", variable=silent_update, state=DISABLED)
-        debug_stderr_chbtn = ttk.Checkbutton(
-            gs_frame, text="记录错误信息到文件", variable=debug_stderr_var, state=NORMAL)
         beta_ver_chbtn = ttk.Checkbutton(gs_frame, text="检查测试版更新", variable=check_for_beta_ver_var)
         update_combobox = ttk.Combobox(gs_frame, state="readonly", values=tuple(autoupdate_rainbow.keys()))
         del_all_path_btn = ttk.Button(
@@ -719,7 +716,7 @@ class SyncCraft(Pk_Stray):
             save, lambda: self.global_window_destroyed(win, "全局设置")))
 
         update_combobox.set(pk.val2key(autoupdate_rainbow, gs_conf.get("autoUpdate", None)))
-        self.record_fx(f"{silent_update.get()=}", tag=self.LOG_DEBUG)
+        print(f"{silent_update.get()=}")
         del_invalid_path_combobox.set(self.SYNC_ROOT_FP)
 
         gs_frame.grid(row=0, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
@@ -729,7 +726,6 @@ class SyncCraft(Pk_Stray):
         check_for_updates_chbtn.grid(row=0, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         update_combobox.grid(row=0, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         del_all_path_btn.grid(row=3, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        debug_stderr_chbtn.grid(row=3, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         del_invalid_path_combobox.grid(row=2, column=0, columnspan=3, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         ok_button.grid(row=30, column=0, columnspan=30, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
@@ -1048,6 +1044,8 @@ class SyncCraft(Pk_Stray):
         presets_menu.add_command(label=self.KEY_BOARD["preset1"][2], command=self.KEY_BOARD["preset1"][3],
                                  accelerator=self.KEY_BOARD["preset1"][1])
         sync_menu.add_separator()
+        sync_menu.add_command(label=self.KEY_BOARD["exit"][2], command=self.KEY_BOARD["exit"][3],
+                              accelerator=self.KEY_BOARD["exit"][1])
         sync_menu.add_command(label=self.KEY_BOARD["save_exit"][2], command=self.KEY_BOARD["save_exit"][3],
                               accelerator=self.KEY_BOARD["save_exit"][1])
         sync_menu.add_command(label=self.KEY_BOARD["terminate"][2], foreground="red", activebackground="red",
@@ -1213,46 +1211,6 @@ class SyncCraft(Pk_Stray):
         self.update()
 
 
-def screenCapture(sync: SyncCraft):
-    # https://www.cnblogs.com/lcl-cn/p/18182320
-    # 设置截图保存路径
-    screenshot_folder = join(sync.SYNC_ROOT_FP, "Screenshots")  # 设置截图保存文件夹路径
-    if not exists(screenshot_folder):
-        sync.record_fx(f"创建 {screenshot_folder} 截图文件夹")
-        mkdir(screenshot_folder)  # 创建截图保存文件夹，如果文件夹已存在则忽略
-    # 初始化上一次截图
-    last_screenshot = ImageGrab.grab()  # 全屏截图
-    sync.record_fx(f"屏幕宽高 = {last_screenshot.size}")
-    monitor_region = (0, 0) + last_screenshot.size
-    screen_capacity = np.size(np.array(last_screenshot))
-
-    while True:  # 进入无限循环，持续监控屏幕变化
-        # 获取当前屏幕截图
-        current_screenshot = ImageGrab.grab(bbox=monitor_region)  # 截取指定区域的屏幕图像，并赋值给current_screenshot变量
-        # 将图像转换为 NumPy 数组
-        current_screenshot_array = np.array(current_screenshot)  # 将当前截图转换为NumPy数组
-        last_screenshot_array = np.array(last_screenshot)  # 将上一次截图转换为NumPy数组
-        # 计算监控区域的像素值差异
-        pixel_diff = np.sum(current_screenshot_array != last_screenshot_array)  # 计算两张截图像素差异的总和
-        sync.record_fx(f"像素差异值：{pixel_diff} ({pixel_diff / screen_capacity * 100:.2f}%)")
-        # 检查像素值差异是否超过阈值（根据具体情况调整阈值）
-        threshold = 100000  # 示例阈值，根据实际情况调整
-        threshold_percent = 0.08  # 8% 的变化
-        # if pixel_diff > threshold:  # 如果像素值差异超过阈值，则表示屏幕发生了变化
-        if pixel_diff / screen_capacity > threshold_percent:  # 如果像素值差异超过阈值，则表示屏幕发生了变化
-            # 生成截图文件名
-            screenshot_filename = f"screenshot_{int(time.time())}.png"  # 根据当前时间生成截图文件名
-            screenshot_path = join(screenshot_folder, screenshot_filename)  # 拼接截图文件路径
-            # 保存截图
-            current_screenshot.save(screenshot_path)  # 将当前截图保存为图片文件
-            # 输出截图信息
-            sync.record_fx(f"Screenshot saved: {screenshot_path}")  # 打印截图保存路径
-            # 更新上一次截图
-            last_screenshot = current_screenshot  # 将当前截图赋值给上一次截图，以便下一次比较
-        # 每隔一定时间进行一次截图
-        time.sleep(5)  # 5秒钟检查一次屏幕变化，可根据需要调整
-
-
 if __name__ == "__main__":
     gs_config: dict = get_conf()
     fix_conf(del_invalid_path=False)
@@ -1302,14 +1260,13 @@ if __name__ == "__main__":
         g2c2 = pk.Peeker(profile[1])
         g2c2.setup()
         g2c2.shut()
-    # g2c2.permanent_job(screenCapture, name="屏幕截图", sync=g2c2)
     start_time.append(pk.time())
 
     g2c2.__class__.debug = debug
 
     if debug:
         # g2c2.record_fx(f"警告：你正在使用 sxj 提供的测试版本, {pk.__version__=}")
-        g2c2.record_fx(f"你正在使用测试版本, {pk.__version__=}", tag=g2c2.LOG_DEBUG)
+        g2c2.record_fx(f"警告：你正在使用测试版本, {pk.__version__=}", tag=g2c2.LOG_DEBUG)
         msgbox.showinfo("", f"警告：你正在使用测试版本, {pk.__version__=}")
     if "/forever" in argv:
         if not no_gui:
@@ -1335,17 +1292,6 @@ if __name__ == "__main__":
         start_time.append(pk.time())
         g2c2.record_fx(f"%s 外部时间计算：第一阶段用时 %.2fs" % (TITLE, start_time[1] - start_time[0]))
         g2c2.record_fx(f"%s 外部时间计算：第二阶段用时 %.2fs" % (TITLE, start_time[2] - start_time[1]))
-        try:
-            g2c2.mainloop()
-        except Exception as e:
-            win = tk.Toplevel(g2c2)
-            g2c2.global_window_initialize(win, "Fatal Error!")
-            exc_text = tk.Text(win)
-            exc_text.grid(row=0, column=0)
-            g2c2.record_exc_info(True)
-            exc = get_exception_info()
-            for i in pk.format_exception(*exc):
-                exc_text.insert(i, END)
-            ttk.Button(win, text="Exit", command=lambda: pk.sys_exit(1)).grid(row=1, column=0)
+        g2c2.mainloop()
         g2c2.record_fx("正在退出. . . . . . ")
         g2c2.save()
