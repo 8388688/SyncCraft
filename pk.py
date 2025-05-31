@@ -21,13 +21,12 @@ from typing import Literal, Callable, Mapping
 
 import colorama
 import ntsecuritycon
-import pywintypes
 import threading
 import win32api
 import win32file
 import win32security
 
-from pk_misc import (is_admin, __version__, windll, is_exec, TITLE, get_time,
+from misc import (is_admin, __version__, windll, is_exec, TITLE, get_time,
                      get_exec, get_exception_info)
 from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
 import sync_api
@@ -425,16 +424,7 @@ class Peeker:
         # 已在 sync_con.py 改写
         import warnings
         warnings.warn("已在 sync_con.py 改写", PendingDeprecationWarning, stacklevel=4)
-        
-        exc_type, exc_value, exc_obj = get_exception_info()
-        self.record_fx("exception_type: \t%s" % exc_type, tag=self.LOG_ERROR)
-        self.record_fx("exception_value: \t%s" % exc_value, tag=self.LOG_ERROR)
-        self.record_fx("exception_object: \t%s" % exc_obj, tag=self.LOG_ERROR)
-        if verbose:
-            self.record_fx("======= FULL EXCEPTION =======", tag=self.LOG_ERROR)
-            for i in format_exception(exc_type, exc_value, exc_obj):
-                self.record_fx(i.rstrip(), tag=self.LOG_ERROR)
-            # self.record_fx("".join(traceback_format_tb(exc_[2])), tag=self.LOG_ERROR)
+        return sync_api.record_exc_info(verbose=verbose)
 
     def update_cursor(self):
         self.__cursors_src = list(self.cursors.keys())
@@ -928,7 +918,7 @@ class Peeker:
         return self.__cursors_src
 
     def get_solid_list(self):
-        return list(map(lambda x: x[0], self.solids))
+        return [i[0] for i in self.solids]
 
     def logout(self, arc_mode: int, del_log: bool, del_conf: bool, del_subfile: bool):
         self.record_fx(f"{self.logout.__name__} 注销此实例: {arc_mode=}, {del_log=}, {del_conf=}, {del_subfile=}")

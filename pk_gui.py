@@ -22,7 +22,7 @@ from PIL import Image
 
 import pk
 import simple_tools as st
-from pk_misc import help_text, TITLE, resource_path, get_exception_info
+from misc import help_text, TITLE, resource_path, get_exception_info
 
 
 def get_center(cls: tk.Tk | tk.Toplevel):

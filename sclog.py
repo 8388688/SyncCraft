@@ -1,5 +1,6 @@
 import logging
 import colorlog
+import os
 
 
 class BaseLogging(logging.Logger):
@@ -72,6 +73,13 @@ class BaseLogging(logging.Logger):
         self.local_log.close()
         self.global_log.close()
 
+
+TITLE = "SyncCraft_Alpha"
+GLOBAL_ROOT_FP = os.path.join(os.getenv("AppData"), TITLE)
+GLOBAL_LOG_DIRP = os.join(GLOBAL_ROOT_FP, "__Logs__")
+gs_log_fp = os.path.join(GLOBAL_LOG_DIRP, f"pk_api_{time() // 86400}.log")  # 86400: 一天一份日志
+log_dirp = os.path.join(SYNC_ROOT_FP, "__Logs__")
+log_fp = os.path.join(log_dirp, f"pk_api_{time() // 86400}.log")  # 86400: 一天一份日志
 
 _root = BaseLogging("Temporary", "D:\\MeadEyetoe_FileTemp\\taskmgr_agent\\l.log", "D:\\MeadEyetoe_FileTemp\\taskmgr_agent\\g.g.g.llog")
 debug = _root.debug

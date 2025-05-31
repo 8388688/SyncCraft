@@ -9,7 +9,7 @@ from requests import get as web_get
 from requests.exceptions import ConnectTimeout, ConnectionError as WebConnectionError
 
 from pk_gui import *
-from pk_misc import (
+from misc import (
     global_settings_dirp, global_settings_fp, __version__,
     build_time, get_exec, is_exec, rate_list, sc_notate_auto, md5sum_2, get_hms
 )
