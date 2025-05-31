@@ -6,7 +6,7 @@
             "build_time": 1747756800,
             "content": "- :lock: 添加“更新时验证所下载程序是否完整”功能",
             "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.5/SyncCraft_windowed.exe",
-            "stable": true,
+            "stable": false,
             "sha256": "7507ffd372163643adff0974cbf3ba61ba403aef9d2a1c8bbf2c1e5c3eee033d"
         },
         "1.9.4": {
