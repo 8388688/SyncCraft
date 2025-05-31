@@ -1,6 +1,6 @@
 import json.decoder
 from http.client import RemoteDisconnected
-from os import chdir, remove, rename, popen, mkdir
+from os import chdir, remove, rename, popen, system
 from os.path import dirname, normpath, samefile, isdir, abspath, isabs
 from tkinter.filedialog import askdirectory
 from webbrowser import open as webbopen
@@ -14,19 +14,8 @@ from pk_misc import (
     build_time, get_exec, is_exec, rate_list, sc_notate_auto, md5sum_2, get_hms
 )
 
+
 # from distutils import *
-original_stderr = stderr
-
-
-def fix_stderr(mode: bool):
-    global stderr, original_stderr
-    print(stderr, original_stderr)
-    if mode:
-        original_stderr = stderr
-        stderr = open(join(global_settings_dirp, "debug_stderr.txt"), "a", encoding="utf-8", )
-    else:
-        stderr.close()
-        stderr = original_stderr
 
 
 def get_conf() -> dict:
@@ -68,6 +57,10 @@ def fix_conf(del_invalid_path=False, fix_entry: ttk.Combobox | tk.Entry | ttk.En
         )
     gs_config.update({"autoUpdate": gs_config.get("autoUpdate", None)})
     gs_config.update({"checkForBetaVersion": gs_config.get("checkForBetaVersion", False)})
+
+
+def screenCapture():
+    pass
 
 
 def global_settings():
@@ -259,7 +252,7 @@ class SyncCraft(Pk_Stray):
                     f"https://github.com/8388688/SyncCraft/releases/download/{updatable}/{TITLE}.exe", stream=True)
             if isinstance(req, int):
                 self.record_fx(f"网络异常，无法更新 (Error {response})")
-                return
+                return 
             content_size = int(req.headers.get("content-length", -1))
             if req.status_code == 200 and content_size != -1:
                 if not silent:
@@ -683,10 +676,8 @@ class SyncCraft(Pk_Stray):
         gs_conf = get_conf()
         silent_update = tk.BooleanVar()
         check_for_beta_ver_var = tk.BooleanVar()
-        debug_stderr_var = tk.BooleanVar()
 
         silent_update.set(gs_conf.get("silent_update", True))
-        debug_stderr_var.set(gs_conf.get("debug_stderr", True))
         check_for_beta_ver_var.set(gs_conf.get("checkForBetaVersion", False))
 
         def save():
@@ -696,11 +687,9 @@ class SyncCraft(Pk_Stray):
             gs_conf.update({
                 "autoUpdate": autoupdate_rainbow[update_combobox.get()],
                 "checkForBetaVersion": check_for_beta_ver_var.get(),
-                "debug_stderr": debug_stderr_var.get(),
             })
             put_conf(gs_conf)
             gs_config = gs_conf
-            fix_stderr(debug_stderr_var.get())
             #####################################################
 
         tip_f = ttk.Label(gs_frame, text="启动时检查更新")
@@ -708,8 +697,6 @@ class SyncCraft(Pk_Stray):
             gs_frame, text=self.KEY_BOARD["check_for_updates"][2], style=self.BUTTON_STYLE_USE,
             command=self.KEY_BOARD["check_for_updates"][3])
         check_for_updates_chbtn = ttk.Checkbutton(gs_frame, text="静默更新", variable=silent_update, state=DISABLED)
-        debug_stderr_chbtn = ttk.Checkbutton(
-            gs_frame, text="记录错误信息到文件", variable=debug_stderr_var, state=NORMAL)
         beta_ver_chbtn = ttk.Checkbutton(gs_frame, text="检查测试版更新", variable=check_for_beta_ver_var)
         update_combobox = ttk.Combobox(gs_frame, state="readonly", values=tuple(autoupdate_rainbow.keys()))
         del_all_path_btn = ttk.Button(
@@ -729,7 +716,7 @@ class SyncCraft(Pk_Stray):
             save, lambda: self.global_window_destroyed(win, "全局设置")))
 
         update_combobox.set(pk.val2key(autoupdate_rainbow, gs_conf.get("autoUpdate", None)))
-        self.record_fx(f"{silent_update.get()=}", tag=self.LOG_DEBUG)
+        print(f"{silent_update.get()=}")
         del_invalid_path_combobox.set(self.SYNC_ROOT_FP)
 
         gs_frame.grid(row=0, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
@@ -739,7 +726,6 @@ class SyncCraft(Pk_Stray):
         check_for_updates_chbtn.grid(row=0, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         update_combobox.grid(row=0, column=1, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         del_all_path_btn.grid(row=3, column=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
-        debug_stderr_chbtn.grid(row=3, column=0, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         del_invalid_path_combobox.grid(row=2, column=0, columnspan=3, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         ok_button.grid(row=30, column=0, columnspan=30, sticky=E, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
 
@@ -1058,6 +1044,8 @@ class SyncCraft(Pk_Stray):
         presets_menu.add_command(label=self.KEY_BOARD["preset1"][2], command=self.KEY_BOARD["preset1"][3],
                                  accelerator=self.KEY_BOARD["preset1"][1])
         sync_menu.add_separator()
+        sync_menu.add_command(label=self.KEY_BOARD["exit"][2], command=self.KEY_BOARD["exit"][3],
+                              accelerator=self.KEY_BOARD["exit"][1])
         sync_menu.add_command(label=self.KEY_BOARD["save_exit"][2], command=self.KEY_BOARD["save_exit"][3],
                               accelerator=self.KEY_BOARD["save_exit"][1])
         sync_menu.add_command(label=self.KEY_BOARD["terminate"][2], foreground="red", activebackground="red",
@@ -1272,14 +1260,13 @@ if __name__ == "__main__":
         g2c2 = pk.Peeker(profile[1])
         g2c2.setup()
         g2c2.shut()
-    # g2c2.permanent_job(screenCapture, name="屏幕截图", sync=g2c2)
     start_time.append(pk.time())
 
     g2c2.__class__.debug = debug
 
     if debug:
         # g2c2.record_fx(f"警告：你正在使用 sxj 提供的测试版本, {pk.__version__=}")
-        g2c2.record_fx(f"你正在使用测试版本, {pk.__version__=}", tag=g2c2.LOG_DEBUG)
+        g2c2.record_fx(f"警告：你正在使用测试版本, {pk.__version__=}", tag=g2c2.LOG_DEBUG)
         msgbox.showinfo("", f"警告：你正在使用测试版本, {pk.__version__=}")
     if "/forever" in argv:
         if not no_gui:
@@ -1305,17 +1292,6 @@ if __name__ == "__main__":
         start_time.append(pk.time())
         g2c2.record_fx(f"%s 外部时间计算：第一阶段用时 %.2fs" % (TITLE, start_time[1] - start_time[0]))
         g2c2.record_fx(f"%s 外部时间计算：第二阶段用时 %.2fs" % (TITLE, start_time[2] - start_time[1]))
-        try:
-            g2c2.mainloop()
-        except Exception as e:
-            win = tk.Toplevel(g2c2)
-            g2c2.global_window_initialize(win, "Fatal Error!")
-            exc_text = tk.Text(win)
-            exc_text.grid(row=0, column=0)
-            g2c2.record_exc_info(True)
-            exc = get_exception_info()
-            for i in pk.format_exception(*exc):
-                exc_text.insert(i, END)
-            ttk.Button(win, text="Exit", command=lambda: pk.sys_exit(1)).grid(row=1, column=0)
+        g2c2.mainloop()
         g2c2.record_fx("正在退出. . . . . . ")
         g2c2.save()
