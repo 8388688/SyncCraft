@@ -1272,14 +1272,12 @@ if __name__ == "__main__":
         g2c2 = pk.Peeker(profile[1])
         g2c2.setup()
         g2c2.shut()
-    # g2c2.permanent_job(screenCapture, name="屏幕截图", sync=g2c2)
     start_time.append(pk.time())
 
     g2c2.__class__.debug = debug
 
     if debug:
-        # g2c2.record_fx(f"警告：你正在使用 sxj 提供的测试版本, {pk.__version__=}")
-        g2c2.record_fx(f"你正在使用测试版本, {pk.__version__=}", tag=g2c2.LOG_DEBUG)
+        g2c2.record_fx(f"你正在使用测试版本, {pk.__version__=}", tag=g2c2.LOG_NOTICE)
         msgbox.showinfo("", f"警告：你正在使用测试版本, {pk.__version__=}")
     if "/forever" in argv:
         if not no_gui:
