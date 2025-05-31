@@ -6,13 +6,15 @@
             "build_time": 1747756800,
             "content": "- :lock: 添加“更新时验证所下载程序是否完整”功能",
             "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.5/SyncCraft_windowed.exe",
-            "stable": false
+            "stable": false,
+            "sha256": "7507ffd372163643adff0974cbf3ba61ba403aef9d2a1c8bbf2c1e5c3eee033d"
         },
         "1.9.4": {
             "build_time": 1744214400,
             "content": "- :recycle: 移除过时的代码：`Peeker().preserve_legacy`、。。。、。。。\n- :art: 『解锁存档』更新代码\n- :bug: 修复在非 NTFS 卷上调用 ACL_config 归档时报错的 bug\n- :children_crossing: 『运行』函数的 increment 现在可以自定义设置了。",
             "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.4/SyncCraft_windowed.exe",
-            "stable": true
+            "stable": true,
+            "sha256": "509cc92758fda6d39e441ef870faa61ff130cc109ee83c2fdefd29ef6557e84a"
         },
         "1.9.4-beta2": {
             "build_time": 1743868800,

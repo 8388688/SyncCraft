@@ -61,7 +61,7 @@ def val2key(seq: Mapping, val, default=None):
         return default
 
 
-class Peeker:
+class Peeker:  # TODO: 参考“点名器.py”
     AND = "and"
     OR = "or"
     EQU = "=="
@@ -78,14 +78,12 @@ class Peeker:
     DEVICE = "device"
 
     LOG_INFO = "info"
-    LOG_NOTICE = "notice"
     LOG_WARNING = "warning"
     LOG_ERROR = "error"
     LOG_DEBUG = "debug"
 
     LOG_COLOR = {
         LOG_INFO: colorama.Fore.RESET,
-        LOG_NOTICE: colorama.Fore.LIGHTBLUE_EX,
         LOG_WARNING: colorama.Fore.YELLOW,
         LOG_ERROR: colorama.Fore.RED,
         LOG_DEBUG: colorama.Fore.GREEN,
@@ -174,7 +172,6 @@ class Peeker:
         self.reserved_size = 0
         self.wait_busy_loop = None
         self.profileSettings = {}
-        self.crontabJobList = {}
         self.work_dir = ""
         self.useCustomDir: bool = False
         self.destroyWhenExit: bool = False
@@ -228,7 +225,6 @@ class Peeker:
             "file_whitelist": self.profileSettings.get("file_whitelist", [])
         })
         self.conf_config.update({"profileSettings": self.profileSettings})
-        self.conf_config.update({"crontabJobList": self.crontabJobList})
         self.record_fx("Upgrade Config 已更新")
 
     def extract_config(self):
@@ -275,7 +271,6 @@ class Peeker:
             "file_blacklist": [],
             "file_whitelist": [],
         })
-        self.crontabJobList = self.conf_config.get("crontabJobList", {})
         self.useCustomDir = self.conf_config.get("useCustomDir", False)
         self.destroyWhenExit = self.conf_config.get("destroyWhenExit", False)
         if self.useCustomDir:
@@ -369,10 +364,6 @@ class Peeker:
         self.record_fx(f"更新排除文件列表 {self.exclude_in_del}")
 
     def record_ln(self, *__text, sep=" ", end="\n", local_log=None, global_log=None, tag=LOG_INFO):
-        import warnings
-        warnings.warn(f"{self.record_ln.__name__} 已由 Sync_con 重新实现",
-                      PendingDeprecationWarning, stacklevel=4)
-        
         tmp = sep.join(map(str, __text)) + end
         now_time = get_time()
         if (local_log is None and self.log_fiet_live) or local_log:
@@ -412,9 +403,8 @@ class Peeker:
         self.renameall_cur(save=True)
         self.upgrade_exclude_dir()
 
-        self.record_fx(f"当前工作目录: {self.work_dir}", tag=self.LOG_NOTICE)
-        self.record_fx(f"setup 函数已执行，version: {__version__}, Time used: %.3fs" % (time() - self.begin_time),
-                       tag=self.LOG_NOTICE)
+        self.record_fx(f"当前工作目录: {self.work_dir}")
+        self.record_fx(f"setup 函数已执行，version: {__version__}, Time used: %.3fs" % (time() - self.begin_time))
 
     def get_admin(self, take=False, quiet=False):
         if is_admin():
@@ -481,22 +471,6 @@ class Peeker:
         self.upgrade_config()
         if save:
             self.save(ren=False)
-
-    def crontab_job(self, fx, name, sleep, *args, **kwargs):
-        th = threading.Thread(target=fx, name=name, *args, **kwargs, daemon=True)
-        th.start()
-        while True:
-            self.wait_fx(sleep)
-            if not th.is_alive():
-                del th
-                self.record_fx(f"定时任务 {name} 执行完毕")
-                th = threading.Thread(target=fx, name=name, *args, **kwargs, daemon=True)
-                th.start()
-
-    def permanent_job(self, fx, name, *args, **kwargs):
-        th = threading.Thread(target=fx, name=name, *args, **kwargs, daemon=True)
-        th.start()
-        self.record_fx(f"持久任务 {name} 已启动")
 
     def delete(self, item, excludes=()):
         def deletefile_api(x, mode: Literal[1, 2] = 1, retry=4):  # mode: 1 = file, 2 = folder
@@ -584,7 +558,7 @@ class Peeker:
             tmp += self.cursors[i].get("archives", [])
         length += self.unlock_arc(tmp, unlock_pre=unlock_pre, delete=delete, untie=untie)
         length += self.unlock_arc(self.synced_archives, unlock_pre=unlock_pre, delete=delete, untie=untie)
-        self.record_fx(f"{self.unlockall_cur.__name__} 共计处理成功 {length} 个存档", tag=self.LOG_NOTICE)
+        self.record_fx(f"{self.unlockall_cur.__name__} 共计处理成功 {length} 个存档")
 
     def attr_config(self, fname, hidden: bool | None = None):
         self.record_fx(f"调用 {self.attr_config.__name__}({fname}) 函数，保护方向：{hidden}")
@@ -637,12 +611,15 @@ class Peeker:
             new_sd.SetSecurityDescriptorOwner(system_user, 0)
             new_sd.SetSecurityDescriptorOwner(admins, 0)
         if force:
+            self.record_fx(f"此文件夹、子文件夹和文件", tag=self.LOG_DEBUG)
             flag = ntsecuritycon.CONTAINER_INHERIT_ACE | ntsecuritycon.OBJECT_INHERIT_ACE  # 此文件夹、子文件夹和文件
             # flag = ntsecuritycon.CONTAINER_INHERIT_ACE | ntsecuritycon.OBJECT_INHERIT_ACE | win32security.INHERIT_ONLY_ACE | win32security.INHERITED_ACE # 同上：此文件夹、子文件夹和文件的一个变种
         else:
+            self.record_fx(f"只有此文件夹", tag=self.LOG_DEBUG)
             flag = ntsecuritycon.NO_PROPAGATE_INHERIT_ACE  # 只有此文件夹
         permission = ntsecuritycon.FILE_ALL_ACCESS  # 不给任何权限
         # permission = ntsecuritycon.FILE_GENERIC_READ | ntsecuritycon.FILE_GENERIC_EXECUTE | ntsecuritycon.FILE_LIST_DIRECTORY | ntsecuritycon.FILE_DELETE_CHILD  # 拒绝读取和执行
+        self.record_fx(f"{preserve=}, {force=}", tag=self.LOG_DEBUG)
         if preserve is None:
             self.record_fx(f"{fname} 不保护")
             return
@@ -703,7 +680,7 @@ class Peeker:
         else:
             self.ACL_config(fname, preserve, force)
             self.attr_config(fname, hidden)
-        self.record_fx(f"{self.preserve.__name__} 命令成功完成", tag=self.LOG_NOTICE)
+        self.record_fx(f"{self.preserve.__name__} 命令成功完成")
 
     def pattern(self, file_path, return_type="code") -> dict | int:
         # return_type: "code" | "dict"
@@ -833,10 +810,9 @@ class Peeker:
                 tmp = self.before_sync(i)
 
                 if tmp:
-                    for j in fp_gen(
-                            i, abspath=3, files=True, folders=True, precedence_dir=True,
-                            include=self.profileSettings.get("file_blacklist", []),
-                            exclude=self.profileSettings.get("file_whitelist", [])):
+                    for j in fp_gen(i, abspath=3, files=True, folders=True, precedence_dir=True,
+                                    include=self.profileSettings.get("file_blacklist", []),
+                                    exclude=self.profileSettings.get("file_whitelist", [])):
                         if not self.sync_flag:
                             self.record_fx("用户终止了同步")
                             break
@@ -853,22 +829,21 @@ class Peeker:
                                 self.record_fx(f"创建文件: {sname} --> {fname}")
                                 try:
                                     copy2(sname, fname)
+                                except PermissionError:
+                                    self.record_fx("拒绝访问", tag=self.LOG_ERROR)
+                                    self.record_exc_info(False)
                                 except UnicodeError:
                                     self.record_fx("文件编码错误", tag=self.LOG_ERROR)
                                     self.record_exc_info(False)
-                                except OSError as e:
+                                except FileNotFoundError:
+                                    self.record_fx("找不到文件", tag=self.LOG_ERROR)
+                                    self.record_exc_info(False)
+                                except OSError:
                                     self.record_fx("系统错误：", tag=self.LOG_ERROR)
-                                    self.record_fx(
-                                        f"Cannot process file {sname} --> {fname}"
-                                        f" \"{e.filename if e.filename is not None else ''}\","
-                                        f" \"{e.filename2 if e.filename2 is not None else ''}\""
-                                        f" Error Code {e.winerror}: {e.strerror}"
-                                        f" ( = {e.errno})",
-                                        tag=self.LOG_ERROR)
-                                    self.record_exc_info(True)
+                                    self.record_exc_info(False)
                                 except Exception as e:
                                     self.record_fx("其他错误", tag=self.LOG_ERROR)
-                                    self.record_exc_info(True)
+                                    self.record_exc_info(False)
                                 finally:
                                     yield sname, fname
                             else:
@@ -876,8 +851,8 @@ class Peeker:
                                 if isfile(fname):
                                     pass
                                 else:
-                                    self.record_fx(
-                                        f"创建失败 - {fname} 相对文件已存在、但类型不一致", tag=self.LOG_WARNING)
+                                    self.record_fx(f"创建失败 - {fname} 相对文件已存在、但类型不一致",
+                                                   tag=self.LOG_WARNING)
                         elif isdir(sname):
                             # ~~此处偷懒没有加目录存在性判定，因为 safe_md() 函数已经帮我们做好了判定~~
                             # ↑ 已修复
