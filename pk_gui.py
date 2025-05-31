@@ -815,7 +815,7 @@ PermissionError: [WinError 5] 拒绝访问。: '{environ.get("USERPROFILE")}'
 
         # 当 destroy2 显式设置为 True/False 时， self.OnQuit 的值会被直接绕过
         if destroy_mode == 2:
-            if slide and not msgbox.askokcancel("确认关闭", "这么好的程序你舍得关闭吗"):
+            if slide and not msgbox.askokcancel("确认关闭", f"保存并退出 {self.TITLE}？"):
                 return
             else:
                 self.gui_live = False

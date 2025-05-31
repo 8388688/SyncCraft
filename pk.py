@@ -30,7 +30,7 @@ import win32security
 from pk_misc import (is_admin, __version__, windll, is_exec, TITLE, get_time,
                      get_exec, get_exception_info)
 from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
-
+import sync_api
 
 def set_volume_label(drive, label):
     win32file.SetVolumeLabel(drive, label)
@@ -308,18 +308,16 @@ class Peeker:
         self.record_fx("save 保存配置信息 - 完成！")
 
     def __get_id(self):
+        import warnings
+        warnings.warn(f"{self.__get_id.__name__} 已弃用，并将在 2.x 版本移除",
+                      DeprecationWarning, stacklevel=4)
         return get_md5(self.SYNC_ROOT_FP)
 
     def join_cmdline(self, *args: Callable):
-        def join_cmd():
-            for fx in args:
-                if callable(fx):
-                    fx()
-                else:
-                    self.record_fx(str(fx), "不可调用。", tag=self.LOG_WARNING)
-                    # raise ValueError(f"{str(fx)}不可调用。")
-
-        return join_cmd
+        import warnings
+        warnings.warn(f"{self.join_cmdline.__name__} 已由 sync_api.join_cmdline 重新实现",
+                      DeprecationWarning, stacklevel=4)
+        return sync_api.join_cmdline(*args)
 
     def get_fromkey(self, keyword, src=None):
         if src is None:
@@ -331,35 +329,20 @@ class Peeker:
     def __label2mountId(self, drive):
         # 已在 sync_con 改写
         import warnings
-        warnings.warn("已在 sync_con 改写", PendingDeprecationWarning, stacklevel=4)
-
-        for i in listvolumes():
-            # os.path.samefile(path1, path2)
-            try:
-                i_mount = listmounts(i)
-            except FileNotFoundError:
-                self.record_fx(f"文件系统错误 - {i} 无法映射到对应的挂载点", tag=self.LOG_ERROR)
-                self.record_exc_info(True)
-                return False
-            else:
-                if realpath(drive) in map(lambda x: realpath(x, strict=False), i_mount):
-                    return i
-        else:
-            # raise FileNotFoundError("指定的驱动器不存在")
-            return drive
+        warnings.warn("已在 sync_con 改写", DeprecationWarning, stacklevel=4)
+        return sync_api.label2mountId(drive=drive)
 
     def __get_volume_label(self, drive) -> str | None:
-        try:
-            return win32api.GetVolumeInformation(drive)[0]
-        except pywintypes.error:
-            self.record_exc_info(True)
-            return None
+        import warnings
+        warnings.warn(f"{self.__get_volume_label.__name__} 已由 sync_api.get_volume_label 重新实现",
+                      DeprecationWarning, stacklevel=4)
+        return sync_api.get_volume_label(drive)
 
     def __set_volume_label(self, drive, label=""):
-        try:
-            return win32file.SetVolumeLabel(drive, label)
-        except pywintypes.error:
-            self.record_exc_info(True)
+        import warnings
+        warnings.warn(f"{self.record_ln.__name__} 已由 Sync_con 重新实现",
+                      PendingDeprecationWarning, stacklevel=4)
+        return sync_api.set_volume_label(drive=drive, label=label)
 
     get_volume_label = __get_volume_label
     set_volume_label = __set_volume_label
@@ -419,14 +402,14 @@ class Peeker:
     def get_admin(self, take=False, quiet=False):
         if is_admin():
             if not quiet:
-                self.record_fx(f"正在使用管理员权限运行 - 非常棒！")
+                self.record_fx(f"正在使用管理员权限运行 - 非常棒！", tag=self.LOG_NOTICE)
             return True
         else:
             if not quiet:
                 self.record_fx(f"尝试使用管理员权限运行 :(", tag=self.LOG_WARNING)
             if take:
                 suffix = self.execute_fp.replace("/", "\\").split("\\")[-1].split(".")[-1]
-                self.record_fx(f"准备以管理员身份重启. . . . . . {sys_executable=}, {self.execute_fp=}, {suffix=}")
+                self.record_fx(f"准备以管理员身份重启. . . . . . {sys_executable=}, {self.execute_fp=}, {suffix=}", tag=self.LOG_NOTICE)
                 self.save(ren=True)
                 chdir(getenv("Temp"))
                 if is_exec():
@@ -817,6 +800,7 @@ class Peeker:
     def run_once(self, delay: float = 0.0, increment_delay: float = 1.0, run_completion="", run_beginning="",
                  save=False):
         """主程序"""
+        """除同步前/后执行的命令，其他代码已改写"""
         if self.can_peek(Peeker.OR):
             # old: cmd = "\"" + self.EXE_FP + "\" \"" + self.BATCH_FP + "\""
             if run_beginning:

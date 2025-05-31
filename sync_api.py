@@ -1,5 +1,7 @@
 import simple_tools as st
-import os, ctypes, sys, time, win32file, win32api, shutil
+import os, ctypes, sys, time, win32file, win32api, shutil, pywintypes, traceback
+import sclog
+from typing import Callable
 
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 
@@ -17,7 +19,7 @@ def is_admin():
 
 def is_exec():
     # 是在程序中运行吗（是在程序中运行，还是在源代码中运行）？
-    return hasattr(sys, '_MEIPASS')
+    return hasattr(sys, "_MEIPASS")
 
 
 def get_exec():
@@ -39,14 +41,75 @@ def get_exception_info():
     return sys.exc_info()
 
 
+def record_exc_info(verbose=False):
+    exc_type, exc_value, exc_obj = get_exception_info()
+    sclog.error("exception_type: \t%s" % exc_type)
+    sclog.error("exception_value: \t%s" % exc_value)
+    sclog.error("exception_object: \t%s" % exc_obj)
+    if verbose:
+        sclog.error("======== FULL EXCEPTION ========")
+        for i in traceback.format_exception(exc_type, exc_value, exc_obj):
+            sclog.error(i.rstrip())
+        # sclog.error("".join(traceback_format_tb(exc_[2])))
+
+
+record_exc_info2 = sclog.exception
+
+
+def get_volume_label(drive) -> str | None:
+    try:
+        return win32api.GetVolumeInformation(drive)[0]
+    except pywintypes.error as e:
+        sclog.error(f"sc1.10+检查卷标时出现错误")
+        sclog.error(f"Error Code {e.winerror}: {e.strerror}")
+        # sclog.exception("sc1.10+检查卷标时出现错误\n")
+        record_exc_info(True)
+        return None
+
+
 def set_volume_label(drive, label):
-    win32file.SetVolumeLabel(drive, label)
-    return label
+    try:
+        return win32file.SetVolumeLabel(drive, label)
+    except pywintypes.error as e:
+        sclog.error(f"sc1.10+设置卷标时出现错误")
+        sclog.error(f"Error Code {e.winerror}: {e.strerror}")
+        record_exc_info(True)
+    finally:
+        return label
+
+
+def label2mountId(drive):
+    for i in os.listvolumes():
+        # os.path.samefile(path1, path2)
+        try:
+            i_mount = os.listmounts(i)
+        except FileNotFoundError:
+            sclog.error(f"文件系统错误 - {i} 无法映射到对应的挂载点")
+            record_exc_info(True)
+            return False
+        else:
+            if os.path.realpath(drive) in map(lambda x: os.path.realpath(x, strict=False), i_mount):
+                return i
+    else:
+        # raise FileNotFoundError("指定的驱动器不存在")
+        return drive
 
 
 def get_freespace_shutil(folder):
     _, _, free = shutil.disk_usage(folder)
     return free
+
+
+def join_cmdline(*args: Callable):
+    def join_cmd():
+        for fx in args:
+            if callable(fx):
+                fx()
+            else:
+                sclog.warning(str(fx), "不可调用。")
+                # raise ValueError(f"{str(fx)}不可调用。")
+
+    return join_cmd
 
 
 def sc_notate_auto(number):
