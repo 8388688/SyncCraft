@@ -18,7 +18,7 @@ from traceback import format_exception
 from typing import Sequence, Callable, Set, Mapping
 
 import pystray
-from PIL import Image, ImageGrab
+from PIL import Image
 
 import pk
 import simple_tools as st

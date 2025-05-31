@@ -3,6 +3,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Literal, AnyStr, MutableSequence
 import simple_tools as st
+import os
 from sync_api import *
 
 
@@ -108,15 +109,24 @@ class BaseSynchronization(ABC):
 
         self.archives: MutableSequence = []
 
-    @abstractmethod
     def run(self):
-        raise NotImplementedError("子类必须实现 run 方法")
+        # raise NotImplementedError("子类必须实现 run 方法")
+        pass
     
     def get(self, attribute: AnyStr, default=None):
         if hasattr(self, attribute):
             return getattr(self, attribute)
         else:
             return default
+    
+    def get_new_name(self, old_name: AnyStr):
+        return old_name + get_time
+    
+    def archive(self, __fp=None):
+        if __fp is None:
+            __fp = self.dst
+        new_name = 
+        os.rename(__fp, )
         
 
     def get_factor(self, file_path=None, return_type: Literal["code", "int"]="code") -> dict | int:
@@ -258,8 +268,4 @@ def label2mountId(drive):
 
 
 if __name__ == "__main__":
-    d = SolidSync("C:\\", "G:\\Temp\\CC")
-    d.label_blacklist = [1, 3, 2]
-    print(d.get("label_blacklist", "dfdsfg"))
-    print(d.get("FGG"))
-    print(d.get("dst", "LMN"))
+    pass

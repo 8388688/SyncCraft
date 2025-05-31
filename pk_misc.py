@@ -1,4 +1,4 @@
-import sys
+import sys, hashlib
 from ctypes import windll
 from os import getenv
 from os.path import abspath, join, dirname
@@ -6,8 +6,8 @@ from time import time, localtime, strftime
 
 import simple_tools as st
 
-__version__ = "1.9.4"
-build_time = 1744214400
+__version__ = "1.9.5"
+build_time = 1747756800
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 global_settings_dirp = join(getenv("APPDATA"), TITLE)
@@ -61,8 +61,26 @@ def get_time(format_="%Y-%m-%dT%H.%M.%SZ"):
     return strftime(format_, localtime(time()))
 
 
+def get_hms(timestamp: float | int):
+    tmp = timestamp // 3600
+    hh = "" if tmp <= 0 else f"{tmp:} 时"
+    tmp = timestamp % 3600 // 60
+    mm = "" if tmp <= 0 else f"{tmp} 分"
+    tmp = timestamp % 60
+    ss = "" if tmp <= 0 else f"{tmp:.1f} 秒"
+    return f"{hh}{mm}{ss}"
+
+
 def get_exception_info():
     return sys.exc_info()
+
+
+def md5sum_2(fpath: str, algorithm: str, buffering: int = 8096) -> str:
+    with open(fpath, "rb") as f:
+        result = hashlib.new(algorithm)
+        for chunk in iter(lambda: f.read(buffering), b""):
+            result.update(chunk)
+        return result.hexdigest()
 
 
 def sc_notate_auto(number):

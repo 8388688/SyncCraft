@@ -1,5 +1,4 @@
 import json.decoder
-import numpy as np
 from http.client import RemoteDisconnected
 from os import chdir, remove, rename, popen, mkdir
 from os.path import dirname, normpath, samefile, isdir, abspath, isabs
@@ -12,7 +11,7 @@ from requests.exceptions import ConnectTimeout, ConnectionError as WebConnection
 from pk_gui import *
 from pk_misc import (
     global_settings_dirp, global_settings_fp, __version__,
-    build_time, get_exec, is_exec, rate_list, sc_notate_auto
+    build_time, get_exec, is_exec, rate_list, sc_notate_auto, md5sum_2, get_hms
 )
 
 # from distutils import *
@@ -275,7 +274,7 @@ class SyncCraft(Pk_Stray):
                         size += len(chunk)
                         tmp = (f"已下载 {sc_notate_auto(size)}/"
                                f"{sc_notate_auto(content_size)}"
-                               f"\tspeed: {sc_notate_auto(size / (time.time() - start_t))}")
+                               f"\ttime elapsed: {get_hms(content_size / (size / (time.time() - start_t)))}s")
                         if not silent:
                             dl_bar.config(value=size // chunk_size)
                             label1.config(text=f"{size / content_size * 100:.2f}%")
@@ -286,11 +285,21 @@ class SyncCraft(Pk_Stray):
                             if count_ch % 10 == 0:
                                 self.record_fx(tmp)
 
-                exec_bak = get_exec() + ".old"
-                if exists(exec_bak):
-                    remove(exec_bak)
-                rename(get_exec(), exec_bak)
-                rename(get_exec() + ".tmp", get_exec())
+                
+                down_content_val = md5sum_2(get_exec() + ".tmp", "sha256")
+                if sha256_val != down_content_val:
+                    self.record_fx(f"下载错误 - 验证下载的文件不完整", tag=self.LOG_ERROR)
+                    return 3
+                else:
+                    if sha256_val is None:
+                        self.record_fx("无法验证下载的文件是否完整，请谨慎打开。", tag=self.LOG_WARNING)
+                    else:
+                        self.record_fx("验证下载 - 文件完整！")
+                    exec_bak = get_exec() + ".old"
+                    if exists(exec_bak):
+                        remove(exec_bak)
+                    rename(get_exec(), exec_bak)
+                    rename(get_exec() + ".tmp", get_exec())
             else:
                 self.record_fx(f"下载错误！{response.status_code=}, {content_size=}", tag=self.LOG_ERROR)
             tmp = "更新完成，用时%.1fs\n你是否现在重启 %s" % (time.time() - start_t, TITLE)
@@ -325,7 +334,7 @@ class SyncCraft(Pk_Stray):
         updatable = up_data[0]
 
         # current_date = mktime(strptime("", "%Y-%m-%d"))
-        tmp = ""
+        tmp, sha256_val = "", ""
         buildTime = up_data[1]
         for i in up_content.keys():
             if up_content[i]["build_time"] > buildTime and (
@@ -333,7 +342,8 @@ class SyncCraft(Pk_Stray):
                 updatable = i
                 buildTime = up_content[i]["build_time"]
                 # current_date = response_json[i]["date"]
-                tmp = f"更新内容：\n{up_content[i]["content"]}\n\n下载链接：\n{response_json["gh-page"]}\n"
+                tmp = f"更新内容：\n{up_content[i]["content"]}\n\n下载链接:\n{response_json["gh-page"]}\n"
+                sha256_val = up_content[i].get("sha256", None)
 
         if updatable == up_data[0]:
             self.record_fx("暂无更新")
@@ -1211,46 +1221,6 @@ class SyncCraft(Pk_Stray):
             row=3, column=0, columnspan=2, padx=self.GLOBAL_PADX, pady=self.GLOBAL_PADY)
         self.bind("<Button-3>", lambda event: rightClick_post(event.x_root, event.y_root))
         self.update()
-
-
-def screenCapture(sync: SyncCraft):
-    # https://www.cnblogs.com/lcl-cn/p/18182320
-    # 设置截图保存路径
-    screenshot_folder = join(sync.SYNC_ROOT_FP, "Screenshots")  # 设置截图保存文件夹路径
-    if not exists(screenshot_folder):
-        sync.record_fx(f"创建 {screenshot_folder} 截图文件夹")
-        mkdir(screenshot_folder)  # 创建截图保存文件夹，如果文件夹已存在则忽略
-    # 初始化上一次截图
-    last_screenshot = ImageGrab.grab()  # 全屏截图
-    sync.record_fx(f"屏幕宽高 = {last_screenshot.size}")
-    monitor_region = (0, 0) + last_screenshot.size
-    screen_capacity = np.size(np.array(last_screenshot))
-
-    while True:  # 进入无限循环，持续监控屏幕变化
-        # 获取当前屏幕截图
-        current_screenshot = ImageGrab.grab(bbox=monitor_region)  # 截取指定区域的屏幕图像，并赋值给current_screenshot变量
-        # 将图像转换为 NumPy 数组
-        current_screenshot_array = np.array(current_screenshot)  # 将当前截图转换为NumPy数组
-        last_screenshot_array = np.array(last_screenshot)  # 将上一次截图转换为NumPy数组
-        # 计算监控区域的像素值差异
-        pixel_diff = np.sum(current_screenshot_array != last_screenshot_array)  # 计算两张截图像素差异的总和
-        sync.record_fx(f"像素差异值：{pixel_diff} ({pixel_diff / screen_capacity * 100:.2f}%)")
-        # 检查像素值差异是否超过阈值（根据具体情况调整阈值）
-        threshold = 100000  # 示例阈值，根据实际情况调整
-        threshold_percent = 0.08  # 8% 的变化
-        # if pixel_diff > threshold:  # 如果像素值差异超过阈值，则表示屏幕发生了变化
-        if pixel_diff / screen_capacity > threshold_percent:  # 如果像素值差异超过阈值，则表示屏幕发生了变化
-            # 生成截图文件名
-            screenshot_filename = f"screenshot_{int(time.time())}.png"  # 根据当前时间生成截图文件名
-            screenshot_path = join(screenshot_folder, screenshot_filename)  # 拼接截图文件路径
-            # 保存截图
-            current_screenshot.save(screenshot_path)  # 将当前截图保存为图片文件
-            # 输出截图信息
-            sync.record_fx(f"Screenshot saved: {screenshot_path}")  # 打印截图保存路径
-            # 更新上一次截图
-            last_screenshot = current_screenshot  # 将当前截图赋值给上一次截图，以便下一次比较
-        # 每隔一定时间进行一次截图
-        time.sleep(5)  # 5秒钟检查一次屏幕变化，可根据需要调整
 
 
 if __name__ == "__main__":
