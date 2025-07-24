@@ -1,7 +1,7 @@
 {
     "version": "1.9.5",
-    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.5",
-    "updates": {
+    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.5-lts1",
+   "updates": {
         "1.9.5-lts1": {
             "build_time": 1753286400,
             "content": "- :lock: 长期支持版本",
