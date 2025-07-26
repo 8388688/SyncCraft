@@ -27,9 +27,11 @@ import win32file
 import win32security
 
 from misc import (is_admin, __version__, windll, is_exec, TITLE, get_time,
-                     get_exec, get_exception_info)
+                  get_exec, get_exception_info)
 from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
 import sync_api
+import sync_con
+
 
 def set_volume_label(drive, label):
     win32file.SetVolumeLabel(drive, label)
@@ -98,9 +100,9 @@ class Peeker:
     ATTR_NORMAL = 128
 
     USER_SECURITY_INFO = (
-            win32security.OWNER_SECURITY_INFORMATION
-            | win32security.GROUP_SECURITY_INFORMATION
-            | win32security.DACL_SECURITY_INFORMATION
+        win32security.OWNER_SECURITY_INFORMATION
+        | win32security.GROUP_SECURITY_INFORMATION
+        | win32security.DACL_SECURITY_INFORMATION
     )
 
     DEFAULT_CONFIG_FNAME = "Sync.sc_conf"
@@ -139,9 +141,11 @@ class Peeker:
         self.sync_flag = True  # 为 False 时强行停止循环
         self.SYNC_ROOT_FP = syncRoot_fp  # 唯一，作为识别 ID
         self.conf_fp = join(self.SYNC_ROOT_FP, self.DEFAULT_CONFIG_FNAME)
-        self.gs_log_fp = join(self.GLOBAL_LOG_DIRP, f"pk_api_{time() // 86400}.log")  # 86400: 一天一份日志
+        self.gs_log_fp = join(self.GLOBAL_LOG_DIRP,
+                              f"pk_api_{time() // 86400}.log")  # 86400: 一天一份日志
         self.log_dirp = join(self.SYNC_ROOT_FP, "__Logs__")
-        self.log_fp = join(self.log_dirp, f"pk_api_{time() // 86400}.log")  # 86400: 一天一份日志
+        self.log_fp = join(
+            self.log_dirp, f"pk_api_{time() // 86400}.log")  # 86400: 一天一份日志
         self.log_fiet_live = True
         self.gs_log_fiet_live = True
         safe_md(self.GLOBAL_LOG_DIRP, quiet=True)
@@ -185,7 +189,7 @@ class Peeker:
             self.setup()
 
     """已弃用
-    
+
     def __del__(self):
         self.save(ren=True)
         exit_exc = format_exc()
@@ -280,7 +284,8 @@ class Peeker:
         if self.useCustomDir:
             self.work_dir = self.conf_config["work_dir"]
         else:
-            self.work_dir = self.WORK_DIR_TABLET.get(self.conf_config.get("work_dir", getcwd()), getcwd())
+            self.work_dir = self.WORK_DIR_TABLET.get(
+                self.conf_config.get("work_dir", getcwd()), getcwd())
         self.record_fx("Extract Config 已更新")
 
     def save(self, ren: bool = True):
@@ -314,15 +319,16 @@ class Peeker:
 
     def join_cmdline(self, *args: Callable):
         import warnings
-        warnings.warn(f"{self.join_cmdline.__name__} 已由 sync_api.join_cmdline 重新实现",
+        warnings.warn(f"{self.join_cmdline.__name__} 已由 sync_con.join_cmdline 重新实现",
                       DeprecationWarning, stacklevel=4)
-        return sync_api.join_cmdline(*args)
+        return sync_con.join_cmdline(*args)
 
     def get_fromkey(self, keyword, src=None):
         if src is None:
             tmp = self.profileSettings.get(keyword, None)
         else:
-            tmp = self.cursors.get(src, {}).get(keyword, self.profileSettings.get(keyword, None))
+            tmp = self.cursors.get(src, {}).get(
+                keyword, self.profileSettings.get(keyword, None))
         return tmp
 
     def __label2mountId(self, drive):
@@ -347,22 +353,25 @@ class Peeker:
     set_volume_label = __set_volume_label
 
     def upgrade_exclude_dir(self):
-        self.exclude_in_del = (self.log_dirp, self.conf_fp) + tuple(self.synced_archives)
+        self.exclude_in_del = (self.log_dirp, self.conf_fp) + \
+            tuple(self.synced_archives)
         self.record_fx(f"更新排除文件列表 {self.exclude_in_del}")
 
     def record_ln(self, *__text, sep=" ", end="\n", local_log=None, global_log=None, tag=LOG_INFO):
         import warnings
         warnings.warn(f"{self.record_ln.__name__} 已由 Sync_con 重新实现",
                       PendingDeprecationWarning, stacklevel=4)
-        
+
         tmp = sep.join(map(str, __text)) + end
         now_time = get_time()
         if (local_log is None and self.log_fiet_live) or local_log:
             self.log_fiet.write(f"[{now_time}]{tag}: " + tmp)
         # self.log_fiet.flush()
         if (global_log is None and self.gs_log_fiet_live) or global_log:
-            self.gs_log_fiet.write(f"[{now_time} | {self.SYNC_ROOT_FP}]{tag}: " + tmp)
-        print(self.LOG_COLOR[tag] + f"[{now_time}]{tag}: " + tmp, sep="", end="")
+            self.gs_log_fiet.write(
+                f"[{now_time} | {self.SYNC_ROOT_FP}]{tag}: " + tmp)
+        print(self.LOG_COLOR[tag] +
+              f"[{now_time}]{tag}: " + tmp, sep="", end="")
 
     def setup(self):
         self.gs_log_fiet = open(self.gs_log_fp, "a", encoding="utf-8")
@@ -375,7 +384,8 @@ class Peeker:
         if __version__ == tmp_ver:
             pass
         else:
-            self.record_fx(f"运行版本不一致 {__version__} ≠ {tmp_ver}", tag=self.LOG_WARNING)
+            self.record_fx(
+                f"运行版本不一致 {__version__} ≠ {tmp_ver}", tag=self.LOG_WARNING)
 
         chdir(self.work_dir)
         self.get_admin()
@@ -407,12 +417,15 @@ class Peeker:
             if not quiet:
                 self.record_fx(f"尝试使用管理员权限运行 :(", tag=self.LOG_WARNING)
             if take:
-                suffix = self.execute_fp.replace("/", "\\").split("\\")[-1].split(".")[-1]
-                self.record_fx(f"准备以管理员身份重启. . . . . . {sys_executable=}, {self.execute_fp=}, {suffix=}", tag=self.LOG_NOTICE)
+                suffix = self.execute_fp.replace(
+                    "/", "\\").split("\\")[-1].split(".")[-1]
+                self.record_fx(
+                    f"准备以管理员身份重启. . . . . . {sys_executable=}, {self.execute_fp=}, {suffix=}", tag=self.LOG_NOTICE)
                 self.save(ren=True)
                 chdir(getenv("Temp"))
                 if is_exec():
-                    windll.shell32.ShellExecuteW(None, "runas", self.execute_fp, self.SYNC_ROOT_FP, None, 1)
+                    windll.shell32.ShellExecuteW(
+                        None, "runas", self.execute_fp, self.SYNC_ROOT_FP, None, 1)
                 else:
                     windll.shell32.ShellExecuteW(
                         None, "runas", sys_executable, " ".join((self.execute_fp, self.SYNC_ROOT_FP)), None, 1)
@@ -423,7 +436,8 @@ class Peeker:
     def record_exc_info(self, verbose=True):
         # 已在 sync_con.py 改写
         import warnings
-        warnings.warn("已在 sync_con.py 改写", PendingDeprecationWarning, stacklevel=4)
+        warnings.warn("已在 sync_con.py 改写",
+                      PendingDeprecationWarning, stacklevel=4)
         return sync_api.record_exc_info(verbose=verbose)
 
     def update_cursor(self):
@@ -441,7 +455,8 @@ class Peeker:
             else:
                 self.cursors[__from_src]["archives"].append(new_fn)
             rename(__dir, new_fn)
-            self.preserve(new_fn, self.hidden, self.protection, self.force_unlock)
+            self.preserve(new_fn, self.hidden,
+                          self.protection, self.force_unlock)
         else:
             self.record_fx(f"Folder \'{__dir}\' does not exist!")
 
@@ -456,23 +471,27 @@ class Peeker:
             self.save(ren=False)
 
     def crontab_job(self, fx, name, sleep, *args, **kwargs):
-        th = threading.Thread(target=fx, name=name, *args, **kwargs, daemon=True)
+        th = threading.Thread(target=fx, name=name, *
+                              args, **kwargs, daemon=True)
         th.start()
         while True:
             self.wait_fx(sleep)
             if not th.is_alive():
                 del th
                 self.record_fx(f"定时任务 {name} 执行完毕")
-                th = threading.Thread(target=fx, name=name, *args, **kwargs, daemon=True)
+                th = threading.Thread(
+                    target=fx, name=name, *args, **kwargs, daemon=True)
                 th.start()
 
     def permanent_job(self, fx, name, *args, **kwargs):
-        th = threading.Thread(target=fx, name=name, *args, **kwargs, daemon=True)
+        th = threading.Thread(target=fx, name=name, *
+                              args, **kwargs, daemon=True)
         th.start()
         self.record_fx(f"持久任务 {name} 已启动")
 
     def delete(self, item, excludes=()):
-        def deletefile_api(x, mode: Literal[1, 2] = 1, retry=4):  # mode: 1 = file, 2 = folder
+        # mode: 1 = file, 2 = folder
+        def deletefile_api(x, mode: Literal[1, 2] = 1, retry=4):
             try:
                 if mode == 1:
                     unlink(x)
@@ -520,12 +539,14 @@ class Peeker:
         removed = []
         for i in unlock:
             if exists(i):
-                self.record_fx(f"unlock: {i} - {unlock_pre=}, {delete=}, {untie=}")
+                self.record_fx(
+                    f"unlock: {i} - {unlock_pre=}, {delete=}, {untie=}")
                 if unlock_pre:
                     self.preserve(i, False, False, self.force_unlock)
                     removed.append(i)
             else:
-                self.record_fx(f"Unlock Failed - Folder {i} does not exist!", tag=self.LOG_ERROR)
+                self.record_fx(
+                    f"Unlock Failed - Folder {i} does not exist!", tag=self.LOG_ERROR)
                 if not untie:
                     removed.append(i)
         for item in removed:
@@ -555,34 +576,44 @@ class Peeker:
         length = 0
         for i in self.cursors:
             tmp += self.cursors[i].get("archives", [])
-        length += self.unlock_arc(tmp, unlock_pre=unlock_pre, delete=delete, untie=untie)
-        length += self.unlock_arc(self.synced_archives, unlock_pre=unlock_pre, delete=delete, untie=untie)
-        self.record_fx(f"{self.unlockall_cur.__name__} 共计处理成功 {length} 个存档", tag=self.LOG_NOTICE)
+        length += self.unlock_arc(tmp, unlock_pre=unlock_pre,
+                                  delete=delete, untie=untie)
+        length += self.unlock_arc(self.synced_archives,
+                                  unlock_pre=unlock_pre, delete=delete, untie=untie)
+        self.record_fx(
+            f"{self.unlockall_cur.__name__} 共计处理成功 {length} 个存档", tag=self.LOG_NOTICE)
 
     def attr_config(self, fname, hidden: bool | None = None):
-        self.record_fx(f"调用 {self.attr_config.__name__}({fname}) 函数，保护方向：{hidden}")
+        self.record_fx(
+            f"调用 {self.attr_config.__name__}({fname}) 函数，保护方向：{hidden}")
         if hidden is None:
             self.record_fx(f"{fname} 不隐藏")
             return
         elif hidden:
-            ace = Peeker.ATTR_READ_ONLY + Peeker.ATTR_HIDDEN + Peeker.ATTR_SYSTEM + Peeker.ATTR_ARCHIVE
+            ace = Peeker.ATTR_READ_ONLY + Peeker.ATTR_HIDDEN + \
+                Peeker.ATTR_SYSTEM + Peeker.ATTR_ARCHIVE
         else:
             ace = Peeker.ATTR_NORMAL
         self.record_fx(f"Set Attribute: {ace}")
         win32file.SetFileAttributes(fname, ace)
 
     def ACL_config(self, fname, preserve: bool | None = None, force: bool = False):
-        system_user, domain, type_ = win32security.LookupAccountName("", "SYSTEM")
-        everyone, domain, type_ = win32security.LookupAccountName("", "Everyone")
-        admins, domain, type_ = win32security.LookupAccountName("", "Administrators")
-        user, domain, type_ = win32security.LookupAccountName("", win32api.GetUserName())
+        system_user, domain, type_ = win32security.LookupAccountName(
+            "", "SYSTEM")
+        everyone, domain, type_ = win32security.LookupAccountName(
+            "", "Everyone")
+        admins, domain, type_ = win32security.LookupAccountName(
+            "", "Administrators")
+        user, domain, type_ = win32security.LookupAccountName(
+            "", win32api.GetUserName())
         all_security_info = (
-                win32security.OWNER_SECURITY_INFORMATION
-                | win32security.GROUP_SECURITY_INFORMATION
-                | win32security.DACL_SECURITY_INFORMATION
-                | win32security.SACL_SECURITY_INFORMATION
+            win32security.OWNER_SECURITY_INFORMATION
+            | win32security.GROUP_SECURITY_INFORMATION
+            | win32security.DACL_SECURITY_INFORMATION
+            | win32security.SACL_SECURITY_INFORMATION
         )
-        self.record_fx(f"调用 {self.ACL_config.__name__}({fname}) 函数，保护方向：{preserve}，强制模式：{force}")
+        self.record_fx(
+            f"调用 {self.ACL_config.__name__}({fname}) 函数，保护方向：{preserve}，强制模式：{force}")
 
         """
         sd = win32security.GetFileSecurity(fname, all_security_info)
@@ -622,12 +653,15 @@ class Peeker:
         elif preserve:
             if force:
                 # new_sd.SetSecurityDescriptorOwner(admins, False)
-                dacl.AddAccessDeniedAceEx(win32security.ACL_REVISION, flag, permission, everyone)
+                dacl.AddAccessDeniedAceEx(
+                    win32security.ACL_REVISION, flag, permission, everyone)
             else:
-                dacl.AddAccessDeniedAce(win32security.ACL_REVISION, permission, everyone)
+                dacl.AddAccessDeniedAce(
+                    win32security.ACL_REVISION, permission, everyone)
         else:
             if force:
-                dacl.AddAccessAllowedAceEx(win32security.ACL_REVISION, flag, permission, everyone)
+                dacl.AddAccessAllowedAceEx(
+                    win32security.ACL_REVISION, flag, permission, everyone)
             else:
                 #################################
                 # deleteAce() 确实可以删除继承的权限
@@ -635,13 +669,15 @@ class Peeker:
                 deleted = []
                 for ace_index in range(dacl.GetAceCount()):
                     (ace_type, ace_flags), access_mask, sid = dacl.GetAce(ace_index)
-                    name, domain, account_type = win32security.LookupAccountSid(None, sid)
+                    name, domain, account_type = win32security.LookupAccountSid(
+                        None, sid)
                     # self.record_fx(f"{domain}\\{name}: {hex(ace_flags)}")
                     deleted.append(ace_index)
                 for item in deleted:
                     dacl.DeleteAce(0)
                 #################################
-                dacl.AddAccessAllowedAce(win32security.ACL_REVISION, permission, everyone)
+                dacl.AddAccessAllowedAce(
+                    win32security.ACL_REVISION, permission, everyone)
         new_sd.SetSecurityDescriptorDacl(1, dacl, 0)
         if force and not preserve:
             self.record_fx(f"设置文件所有者 - {win32api.GetUserName()}")
@@ -650,15 +686,17 @@ class Peeker:
             if force:
                 win32security.SetFileSecurity(
                     fname, win32security.DACL_SECURITY_INFORMATION |
-                           win32security.OWNER_SECURITY_INFORMATION, new_sd)
+                    win32security.OWNER_SECURITY_INFORMATION, new_sd)
             else:
                 win32security.SetFileSecurity(
                     fname, win32security.DACL_SECURITY_INFORMATION, new_sd)
         else:
             if force:
-                win32security.SetFileSecurity(fname, win32security.DACL_SECURITY_INFORMATION, new_sd)
+                win32security.SetFileSecurity(
+                    fname, win32security.DACL_SECURITY_INFORMATION, new_sd)
                 # ↑ 用显示权限替换所有权限，不管是显式的还是已继承的
-                win32security.SetFileSecurity(fname, win32security.OWNER_SECURITY_INFORMATION, new_sd)
+                win32security.SetFileSecurity(
+                    fname, win32security.OWNER_SECURITY_INFORMATION, new_sd)
             else:
                 # 保留已继承的权限
                 win32security.SetNamedSecurityInfo(
@@ -666,7 +704,8 @@ class Peeker:
                     win32security.DACL_SECURITY_INFORMATION, None, None, dacl, None)
 
     def preserve(self, fname, hidden: bool | None, preserve: bool | None, force: bool = False):
-        self.record_fx(f"调用 {self.preserve.__name__} 函数, {fname=}, {hidden=}, {preserve=}, {force=}")
+        self.record_fx(
+            f"调用 {self.preserve.__name__} 函数, {fname=}, {hidden=}, {preserve=}, {force=}")
         if preserve is None:
             self.attr_config(fname, hidden)
             # self.ACL_config(fname, preserve)
@@ -711,7 +750,8 @@ class Peeker:
             cur_exists_ch += 0
             cur_exists_list.update({"ismount": False})
 
-        id_blk = self.cursors[file_path].get("volumeId_blacklist", self.profileSettings.get("volumeId_blacklist", []))
+        id_blk = self.cursors[file_path].get(
+            "volumeId_blacklist", self.profileSettings.get("volumeId_blacklist", []))
         if tmp and (not id_blk or tmp in id_blk):
             cur_exists_ch += 1 * 2 ** 4
             cur_exists_list.update({"volumeId_in_blacklist": True})
@@ -729,8 +769,10 @@ class Peeker:
         if self.cursors[file_path]["lastrun"] != tmp:
             cur_exists_ch += 0
             cur_exists_list.update({"samemount": False})
-            self.record_fx(f"检测到不同的卷序列号 - {self.cursors[file_path]['lastrun']} ≠ {tmp}")
-            self.__rename_and_register(self.cursors[file_path]["dst"], file_path)
+            self.record_fx(
+                f"检测到不同的卷序列号 - {self.cursors[file_path]['lastrun']} ≠ {tmp}")
+            self.__rename_and_register(
+                self.cursors[file_path]["dst"], file_path)
         else:
             cur_exists_ch += 1 * 2 ** 3
             cur_exists_list.update({"samemount": True})
@@ -741,7 +783,8 @@ class Peeker:
             tmp2 = self.__get_volume_label(file_path)
             self.record_fx(f"[{file_path}] 的卷标是 [{tmp2}]")
         else:
-            self.record_fx(f"检查卷标时出现错误 - {file_path} 文件不存在", tag=self.LOG_ERROR)
+            self.record_fx(
+                f"检查卷标时出现错误 - {file_path} 文件不存在", tag=self.LOG_ERROR)
             tmp2 = False
         lab_blk = self.get_fromkey("label_blacklist", file_path)
         if not lab_blk or tmp2 in lab_blk:
@@ -757,7 +800,8 @@ class Peeker:
             cur_exists_ch += 0
             cur_exists_list.update({"label_in_whitelist": False})
 
-        self.record_fx(f"{file_path} 编码的数字串 - {"%.16d" % int(dec_to_r_convert(cur_exists_ch, 2, ))}")
+        self.record_fx(
+            f"{file_path} 编码的数字串 - {"%.16d" % int(dec_to_r_convert(cur_exists_ch, 2, ))}")
         self.record_fx(f"{file_path} 字典 - {cur_exists_list}")
         if return_type == "code":
             return cur_exists_ch
@@ -798,7 +842,8 @@ class Peeker:
                 self.record_fx(f"{self.SYNC_ROOT_FP} 执行参数命令: {run_beginning}")
                 command(run_beginning)  # system(run_beginning)
             elif self.run_beginning:
-                self.record_fx(f"{self.SYNC_ROOT_FP} 执行默认命令: {self.run_beginning}")
+                self.record_fx(
+                    f"{self.SYNC_ROOT_FP} 执行默认命令: {self.run_beginning}")
                 command(self.run_beginning)
             else:
                 self.record_fx("已跳过命令执行")
@@ -809,13 +854,15 @@ class Peeker:
                 if tmp:
                     for j in fp_gen(
                             i, abspath=3, files=True, folders=True, precedence_dir=True,
-                            include=self.profileSettings.get("file_blacklist", []),
+                            include=self.profileSettings.get(
+                                "file_blacklist", []),
                             exclude=self.profileSettings.get("file_whitelist", [])):
                         if not self.sync_flag:
                             self.record_fx("用户终止了同步")
                             break
                         if get_freespace_shutil(self.cursors[i]["dst"]) <= self.reserved_size:
-                            self.record_fx(f"硬盘空间不足，停止 {i} 的同步", tag=self.LOG_WARNING)
+                            self.record_fx(
+                                f"硬盘空间不足，停止 {i} 的同步", tag=self.LOG_WARNING)
                             break
                         else:
                             pass
@@ -828,7 +875,8 @@ class Peeker:
                                 try:
                                     copy2(sname, fname)
                                 except UnicodeError:
-                                    self.record_fx("文件编码错误", tag=self.LOG_ERROR)
+                                    self.record_fx(
+                                        "文件编码错误", tag=self.LOG_ERROR)
                                     self.record_exc_info(False)
                                 except OSError as e:
                                     self.record_fx("系统错误：", tag=self.LOG_ERROR)
@@ -862,7 +910,8 @@ class Peeker:
                             else:
                                 pass
                         elif not exists(sname):  # file or dir?
-                            self.record_fx(f"错误：{sname} 文件或目录名称不存在", tag=self.LOG_ERROR)
+                            self.record_fx(
+                                f"错误：{sname} 文件或目录名称不存在", tag=self.LOG_ERROR)
                 else:  # 此 else 对应 if
                     self.record_fx("before_sync 条件不足，停止同步")
                 del tmp
@@ -921,7 +970,8 @@ class Peeker:
         return [i[0] for i in self.solids]
 
     def logout(self, arc_mode: int, del_log: bool, del_conf: bool, del_subfile: bool):
-        self.record_fx(f"{self.logout.__name__} 注销此实例: {arc_mode=}, {del_log=}, {del_conf=}, {del_subfile=}")
+        self.record_fx(
+            f"{self.logout.__name__} 注销此实例: {arc_mode=}, {del_log=}, {del_conf=}, {del_subfile=}")
         if arc_mode == 0:
             # 解锁
             self.unlockall_cur(unlock_pre=True, delete=False, untie=True)

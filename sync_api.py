@@ -1,6 +1,15 @@
+# 此文件中涵盖了 SyncCraft 的一些底层逻辑的函数
+# 这些函数通常来说【不】记录日志
 import simple_tools as st
-import os, ctypes, sys, time, win32file, win32api, shutil, pywintypes, traceback
-import sclog
+import os
+import ctypes
+import sys
+import time
+import win32file
+import win32api
+import shutil
+import pywintypes
+import traceback
 from typing import Callable
 
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
@@ -33,7 +42,8 @@ def get_exec():
 def get_time(format_="%Y-%m-%dT%H.%M.%SZ"):
     # 1.9 及以前的 SyncCraft 记录日志需要调用这个函数
     import warnings
-    warnings.warn("1.10+ 及以后的版本不再需要该函数来格式化日志", PendingDeprecationWarning, stacklevel=4)
+    warnings.warn("1.10+ 及以后的版本不再需要该函数来格式化日志",
+                  PendingDeprecationWarning, stacklevel=4)
     return time.strftime(format_, time.localtime(time()))
 
 
@@ -41,75 +51,9 @@ def get_exception_info():
     return sys.exc_info()
 
 
-def record_exc_info(verbose=False):
-    exc_type, exc_value, exc_obj = get_exception_info()
-    sclog.error("exception_type: \t%s" % exc_type)
-    sclog.error("exception_value: \t%s" % exc_value)
-    sclog.error("exception_object: \t%s" % exc_obj)
-    if verbose:
-        sclog.error("======== FULL EXCEPTION ========")
-        for i in traceback.format_exception(exc_type, exc_value, exc_obj):
-            sclog.error(i.rstrip())
-        # sclog.error("".join(traceback_format_tb(exc_[2])))
-
-
-record_exc_info2 = sclog.exception
-
-
-def get_volume_label(drive) -> str | None:
-    try:
-        return win32api.GetVolumeInformation(drive)[0]
-    except pywintypes.error as e:
-        sclog.error(f"sc1.10+检查卷标时出现错误")
-        sclog.error(f"Error Code {e.winerror}: {e.strerror}")
-        # sclog.exception("sc1.10+检查卷标时出现错误\n")
-        record_exc_info(True)
-        return None
-
-
-def set_volume_label(drive, label):
-    try:
-        return win32file.SetVolumeLabel(drive, label)
-    except pywintypes.error as e:
-        sclog.error(f"sc1.10+设置卷标时出现错误")
-        sclog.error(f"Error Code {e.winerror}: {e.strerror}")
-        record_exc_info(True)
-    finally:
-        return label
-
-
-def label2mountId(drive):
-    for i in os.listvolumes():
-        # os.path.samefile(path1, path2)
-        try:
-            i_mount = os.listmounts(i)
-        except FileNotFoundError:
-            sclog.error(f"文件系统错误 - {i} 无法映射到对应的挂载点")
-            record_exc_info(True)
-            return False
-        else:
-            if os.path.realpath(drive) in map(lambda x: os.path.realpath(x, strict=False), i_mount):
-                return i
-    else:
-        # raise FileNotFoundError("指定的驱动器不存在")
-        return drive
-
-
 def get_freespace_shutil(folder):
     _, _, free = shutil.disk_usage(folder)
     return free
-
-
-def join_cmdline(*args: Callable):
-    def join_cmd():
-        for fx in args:
-            if callable(fx):
-                fx()
-            else:
-                sclog.warning(str(fx), "不可调用。")
-                # raise ValueError(f"{str(fx)}不可调用。")
-
-    return join_cmd
 
 
 def sc_notate_auto(number):
