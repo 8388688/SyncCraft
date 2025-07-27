@@ -1,7 +1,10 @@
+import json
 import tkinter as tk
 import tkinter.messagebox
 import tkinter.simpledialog
+import tkinter.filedialog
 from tkinter import ttk
+from typing import AnyStr, Sequence, Mapping
 
 
 class GUI_old:
@@ -29,16 +32,17 @@ class GUI_old:
 
 
 class GUI:
-    def __init__(self):
-        self.settings = {"foo": True, "bar": 1, "baz": "ABC"}
+    def __init__(self, config_fp):
+        with open(config_fp, "r", encoding="utf-8") as f:
+            self.settings = json.loads(f.read())
 
         self.root = tk.Tk()
         self.xscroll = tk.Scrollbar(self.root, orient=tk.HORIZONTAL)
         self.yscroll = tk.Scrollbar(self.root, orient=tk.VERTICAL)
-        self.columns = ("Key", "Value", "性别")
+        self.columns = ("Key", "Value", "Type", "editable")
         self.table = ttk.Treeview(
             self.root,  # 父容器
-            height=10,  # 表格显示的行数,height行
+            height=20,  # 表格显示的行数,height行
             columns=self.columns,  # 显示的列
             show="headings",  # 隐藏首列
             xscrollcommand=self.xscroll.set,  # x轴滚动条
@@ -50,8 +54,8 @@ class GUI:
                 command=lambda name=column:
                 tkinter.messagebox.showinfo('', '{}描述信息~~~'.format(name)))
             self.table.column(
-                column=column, width=100,
-                minwidth=100, anchor=tk.CENTER, )  # 定义列
+                column=column, width=300,
+                minwidth=300, anchor=tk.CENTER, )  # 定义列
         self.xscroll.config(command=self.table.xview)
         self.xscroll.pack(side=tk.BOTTOM, fill=tk.X)
         self.yscroll.config(command=self.table.yview)
@@ -60,36 +64,60 @@ class GUI:
 
         self.rightClick_menu = tk.Menu(self.root, tearoff=False)
         self.rightClick_menu.add_command(label="修改数据")
-        self.root.bind(
+        self.table.bind(
             "<Button-3>", lambda event: self.right_click(event.x_root, event.y_root))
+
+        # self.root.attributes("-topmost", True)
         self.refresh()
 
     def refresh(self):
         self.table.delete(*self.table.get_children())
         # ↑ 将 TreeView 的数据全部干掉
-        for index, data in enumerate(self.settings.items()):
-            self.table.insert('', tk.END, values=data)  # 添加数据到末尾
+        for k, v in self.get_all(self.settings).items():
+            self.table.insert("", tk.END, values=(
+                k, v, type(v).__name__, self.is_editable(v)))
+
+    def is_editable(self, val):
+        return isinstance(val, str | int | float | bool)
+
+    def get_all(self, mapping: Mapping):
+        result = dict()
+        for k, v in mapping.items():
+            if isinstance(v, Mapping):
+                for k2, v2 in self.get_all(v).items():
+                    result.update({k + "." + k2: v2})
+            else:
+                result.update({k: v})
+        return result
 
     def get_selected_item(self):
+        # 只返回当前正在选择的【键】，不返回对应的值
         cur_item = self.table.focus()
         item_values = self.table.item(cur_item, 'values')
-        return item_values
+        return item_values[0]
 
     def right_click(self, x, y):
         try:
             selected = self.get_selected_item()
-            print(selected)
+            print(f"{selected=}")
         except tk.TclError:
             selected = False
         if selected:
             self.rightClick_menu.entryconfig(
-                "修改数据", state=tk.NORMAL, command=lambda: self.edit_keyvalue(selected[0], selected[1]))
+                "修改数据", state=tk.NORMAL
+                if selected and self.is_editable(self.get_keyvalue_api(self.settings, self.index2indexlist(selected)))
+                else tk.DISABLED,
+                command=lambda: self.edit_keyvalue(selected, self.get_keyvalue_api(self.settings, self.index2indexlist(selected))))
         else:
             self.rightClick_menu.entryconfig("修改数据", state=tk.DISABLED)
         self.rightClick_menu.post(x, y)
 
-    def edit_keyvalue(self, key, defaultval=None):
-        val = self.settings.get(key)
+    def index2indexlist(self, index_str: AnyStr):
+        print(index_str.split("."))
+        return index_str.split(".")
+
+    def edit_keyvalue(self, key: str, defaultval=None):
+        val = self.get_keyvalue_api(self.settings, self.index2indexlist(key))
         if isinstance(val, bool):
             edit_val = not val
         elif isinstance(val, int):
@@ -105,13 +133,35 @@ class GUI:
         else:
             print(val, type(val))
             edit_val = defaultval
-        self.settings.update(
-            {key: self.settings.get(key) if edit_val is None else edit_val})
+        if edit_val is not None:
+            self.set_keyvalue_api(
+                self.settings, self.index2indexlist(key), edit_val)
         self.refresh()
 
-    def edit_keyvalue_api(self, key, value):
-        pass
+    def set_keyvalue_api(self, mapping, key: Sequence, value) -> None:
+        # key: str = [foo, bar, baz]
+        if len(key) == 1:
+            mapping[key[0]] = value
+        else:
+            self.set_keyvalue_api(
+                mapping=mapping[key[0]],
+                key=key[1:], value=value
+            )
+
+    def get_keyvalue_api(self, mapping, key: Sequence):
+        if len(key) == 1:
+            return mapping[key[0]]
+        else:
+            return self.get_keyvalue_api(
+                mapping=mapping[key[0]],
+                key=key[1:]
+            )
 
 
-gui = GUI()
-gui.root.mainloop()
+if __name__ == "__main__":
+    gui = GUI(tkinter.filedialog.askopenfilename(
+        filetypes=(("SyncCraft 配置文件", "*.sc_conf"), ("所有文件", "*.*"))))
+    tk.Button(gui.root, text="RUN!", bg="yellow",
+              width=20, state=tk.DISABLED).pack()
+    gui.root.deiconify()
+    gui.root.mainloop()
