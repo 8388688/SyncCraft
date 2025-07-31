@@ -84,7 +84,7 @@ class BaseLogging(logging.Logger):
 # log_dirp = os.path.join(SYNC_ROOT_FP, "__Logs__")
 # log_fp = os.path.join(log_dirp, f"{time.strftime("%Y-%m-%d", time.localtime(time.time()))}.log")
 
-# _root = BaseLogging("Temporary", "D:\\MeadEyetoe_FileTemp\\taskmgr_agent\\l.log", "D:\\MeadEyetoe_FileTemp\\taskmgr_agent\\g.g.g.llog")
+# _root = BaseLogging("Temporary", "D:\\l.log", "D:\\g.log")
 # debug = _root.debug
 # info = _root.info
 # warn = warning = _root.warning

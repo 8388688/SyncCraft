@@ -5,11 +5,7 @@ import os
 import ctypes
 import sys
 import time
-import win32file
-import win32api
 import shutil
-import pywintypes
-import traceback
 from typing import Callable
 
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
