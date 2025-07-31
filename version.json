@@ -1,7 +1,13 @@
 {
-    "version": "1.9.5-lts1",
-    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.5-lts1",
-   "updates": {
+    "version": "1.9.5-lts2",
+    "gh-page": "https://github.com/8388688/SyncCraft/releases/tag/1.9.5-lts2",
+    "updates": {
+        "1.9.5-lts2": {
+            "build_time": 1753891200,
+            "content": "- :art: 出现致命错误时的记录界面",
+            "url": "https://github.com/8388688/SyncCraft/releases/download/1.9.5-lts2/SyncCraft_windowed.exe",
+            "stable": false
+        },
         "1.9.5-lts1": {
             "build_time": 1753286400,
             "content": "- :lock: 长期支持版本",

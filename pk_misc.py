@@ -1,17 +1,18 @@
-import sys, hashlib
+import sys
+import hashlib
 from ctypes import windll
-from os import getenv
+from os import getenv, makedirs
 from os.path import abspath, join, dirname
 from time import time, localtime, strftime
 
 import simple_tools as st
 
-__version__ = "1.9.5"
+__version__ = "1.9.5-lts2"
 build_time = 1747756800
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 global_settings_dirp = join(getenv("APPDATA"), TITLE)
-st.safe_md(global_settings_dirp, quiet=True)
+makedirs(global_settings_dirp, exist_ok=True)
 global_settings_fp = join(global_settings_dirp, "globalsettings.sc_json")
 
 """
@@ -97,12 +98,12 @@ help_text = {
     "add": """添加文件夹：如果 dst 为相对路径，
     系统会自动将其转换为相对同步根目录的路径""",
     "parameter": """参数设置：
-    /forever: 
-    /no_gui: 
-    /build: 
+    /forever:
+    /no_gui:
+    /build:
     """,
     "settings": ("""
-reserved_size: 硬盘的保留空间，
+reserved_size：硬盘的保留空间，
 有时候，同步的数据会占用过多硬盘空间。这个设置在每次同步时会检查一下硬盘的剩余空间（默认为 0 字节，也就是不留空间）。
 当硬盘空间小于设定的数值时，停止同步。
 busy_loop 时间等待：在程序内部使用更为精确的 CPU 滴答时钟计算等待时间，对时间控制更为精准，但同时也会带来更高的 CPU 负担。
