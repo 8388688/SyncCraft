@@ -6,7 +6,8 @@ import pywintypes
 import win32api
 import win32security
 import win32file
-from typing import Callable
+from typing import Callable, Sequence
+import sys
 import traceback
 
 import sclog
@@ -39,6 +40,10 @@ def attr_config(self, fname, hidden: bool | None = None):
 
 
 def ACL_config(fname, preserve: bool | None = None, force: bool = False):
+    """
+
+    True 时一定需要管理员权限
+    """
     system_user, domain, type_ = win32security.LookupAccountName(
         "", "SYSTEM")
     everyone, domain, type_ = win32security.LookupAccountName(
@@ -145,6 +150,22 @@ def ACL_config(fname, preserve: bool | None = None, force: bool = False):
                 win32security.DACL_SECURITY_INFORMATION, None, None, dacl, None)
 
 
+def run_as_admin(parameters: Sequence):
+    if is_admin():
+        _root.notice(f"正在使用管理员权限运行 - 非常棒！")
+    else:
+        _root.notice(
+            f"准备以管理员身份重启. . . . . . {get_exec()=}")
+        # self.save(ren=True)
+        os.chdir(os.getenv("Temp"))
+        if is_exec():
+            ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", get_exec(), " ".join(parameters), None, 1)
+        else:
+            _root.error("在 Python 环境下不允许调用这个模块 - “以管理员权限运行”")
+        sys.exit(0)
+
+
 def get_volume_label(drive) -> str | None:
     try:
         return win32api.GetVolumeInformation(drive)[0]
@@ -192,7 +213,7 @@ def set_volume_label(drive, label):
     try:
         return win32file.SetVolumeLabel(drive, label)
     except pywintypes.error as e:
-        _root.error(f"sc1.10+设置卷标时出现错误")
+        _root.error(f"sc2.0+设置卷标时出现错误")
         _root.error(f"Error Code {e.winerror}: {e.strerror}")
         record_exc_info(True)
     finally:

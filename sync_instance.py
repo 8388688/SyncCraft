@@ -2,29 +2,33 @@ import os
 from abc import ABC, abstractmethod
 from typing import Literal, AnyStr, MutableSequence
 import simple_tools as st
-import os
+import shutil
+import time
 
-from sync_api import *
-from sync_con import *
+import sync_api
+import sync_con
 import sclog
 
-__version__ = "1.9.4"
+__version__ = "2.0.0-Alpha1"
 build_time = 1744214400
 TITLE = "SyncCraft"
+K_PORTABLE = True
+"""
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 global_settings_dirp = os.path.join(os.getenv("APPDATA"), TITLE)
-st.safe_md(global_settings_dirp, quiet=True)
-global_settings_fp = os.path.join(global_settings_dirp, "globalsettings.sc_json")
-
+os.makedirs(global_settings_dirp, exist_ok=True)
+global_settings_fp = os.path.join(
+    global_settings_dirp, "globalsettings.sc_json")
+"""
 
 # class Archiver:
 #     """存档管理"""
 #     pass
 
 
-# class BaseSynchronization(ABC):
-class BaseSynchronization():
-    sync_type = ""  # 子类必须重写 sync_type 类变量，并且此方法对于实例来说为只读
+class BaseSynchronization_old():
+    # 将被弃用
+
     def __init__(self, src, dst):
         self.src = src
         self.dst = dst
@@ -102,24 +106,22 @@ class BaseSynchronization():
         else:  # 此 else 对应 if
             sclog.info("before_sync 条件不足，停止同步")
 
-    
     def get(self, attribute: AnyStr, default=None):
         if hasattr(self, attribute):
             return getattr(self, attribute)
         else:
             return default
-    
+
     def get_new_name(self, old_name: AnyStr):
         return old_name + get_time
-    
+
     def archive(self, __fp=None):
         if __fp is None:
             __fp = self.dst
         new_name = __fp + get_time("%Y%m%d%H%M%S")
         os.rename(__fp, new_name)
-        
 
-    def get_factor(self, file_path=None, return_type: Literal["code", "int"]="code") -> dict | int:
+    def get_factor(self, file_path=None, return_type: Literal["code", "int"] = "code") -> dict | int:
         # return_type: "code" | "dict"
         #
         # 专门针对驱动器同步的增强
@@ -199,7 +201,8 @@ class BaseSynchronization():
             cur_exists_ch += 0
             cur_exists_list.update({"label_in_whitelist": False})
 
-        sclog.info(f"{file_path} 编码的数字串 - {"%.16d" % int(st.dec_to_r_convert(cur_exists_ch, 2, ))}")
+        sclog.info(
+            f"{file_path} 编码的数字串 - {"%.16d" % int(st.dec_to_r_convert(cur_exists_ch, 2, ))}")
         sclog.info(f"{file_path} 字典 - {cur_exists_list}")
         if return_type == "code":
             return cur_exists_ch
@@ -207,20 +210,137 @@ class BaseSynchronization():
             return cur_exists_list
 
 
+class BaseSynchronization:
+    """“同步”的抽象基类
+
+    对于任意一个 Sync
+    子类至少要实现的方法和声明的属性如下
+    Attributes:
+        logger: 日志记录的实例，所有的记录日志的行为都通过本属性
+        src: 同步的源文件夹
+        dst: 同步的目标文件夹
+    """
+    sync_type = "BaseSynchronization"  # 子类必须重写 sync_type 类变量，并且此方法对于实例来说为只读
+
+    def __init__(self, log_root: sclog.BaseLogging, src, dst):
+        self.logger = log_root
+        self.src = src
+        self.dst = dst
+        self.logger.notice(f"type: {self.__class__.sync_type}")
+
+    def is_synchronizable(self) -> bool:
+        # 当前是否具备了开始同步的条件。
+        return os.path.exists(self.src)
+
+    def list_src(self, __fp):
+        """
+
+        以【相对路径】的方式，
+        【按同步的顺序】逐个地输出 src 中【应该被同步的】文件 \\
+        （意即在某些情况下不必输出 src 下的全部文件）。
+        """
+        for i in os.listdir(__fp):
+            fullpath = os.path.join(__fp, i)
+
+            if os.path.isdir(fullpath):
+                yield i  # 也输出文件夹
+                for j in self.list_src(fullpath):
+                    yield os.path.join(i, j)
+            else:
+                yield i
+
+    def run(self) -> None:
+        # 执行同步，本函数没有返回值。
+        if self.is_synchronizable():
+            for i in self.list_src(self.src):
+                src_fullpath = os.path.join(self.src, i)
+                dst_fullpath = os.path.join(self.dst, i)
+                if not os.path.exists(dst_fullpath):
+                    if os.path.isfile(src_fullpath):
+                        shutil.copy2(src_fullpath, dst_fullpath)
+                        self.logger.notice(
+                            f"copying file: {src_fullpath} --> {dst_fullpath}")
+                    else:
+                        os.mkdir(dst_fullpath)
+                        self.logger.notice(
+                            f"copying dir:{src_fullpath} --> {dst_fullpath}")
+                else:
+                    self.logger.notice(
+                        f"skipping: {src_fullpath} --> {dst_fullpath}")
+        else:
+            self.logger.notice(f"{self.src}: is_synchronizable 不允许同步")
+
 
 class SolidSync(BaseSynchronization):
     sync_type = "solid"
 
+    def __init__(self, log_root, src, dst):
+        super().__init__(log_root, src, dst)
+
     def run(self):
-        pass
+        # run_beginning
+        sync_con.ACL_config(self.dst, False)
+        super().run()
+        # run_completion
+        sync_con.ACL_config(self.dst, True)
 
 
 class CursorSync(BaseSynchronization):
     sync_type = "cursor"
 
+    def __init__(self, log_root, src, dst):
+        super().__init__(log_root, src, dst)
+
+    @staticmethod
+    def get_new_fname(fp):
+        return os.path.normpath(fp) + time.strftime("%Y%m%d%H%M%S")
+
+    def run(self):
+        if not os.path.exists(self.dst):
+            os.mkdir(self.dst)
+        super().run()
+        os.rename(self.dst, self.get_new_fname(self.dst))
+
 
 class ReplacementSync(BaseSynchronization):
+    """Trojan: 同步四大基类中唯一一个能够操作 src 中文件的类"""
     sync_type = "replacement"
+
+    def __init__(self, log_root, src, dst):
+        super().__init__(log_root, src, dst)
+        self.touch_files = []
+        self.move_files = []
+        self.delete_files = []
+
+    def touch(self, fp):
+        """创建文件"""
+        pass
+
+    def move(self, fp):
+        """移动 & 重命名文件"""
+        pass
+
+    def delete(self, fp):
+        pass
+
+    def run(self):
+        # 完全重写 BaseSynchronziation 的父类
+        if self.is_synchronizable():
+            for i in self.list_src(self.src):
+                src_fullpath = os.path.join(self.src, i)
+                dst_fullpath = os.path.join(self.dst, i)
+                if not os.path.exists(dst_fullpath):
+                    if os.path.isfile(src_fullpath):
+                        shutil.copy2(src_fullpath, dst_fullpath)
+                        self.logger.notice(
+                            f"copying file: {src_fullpath} --> {dst_fullpath}")
+                    else:
+                        os.mkdir(dst_fullpath)
+                        self.logger.notice(
+                            f"copying dir:{src_fullpath} --> {dst_fullpath}")
+                else:
+                    self.logger.notice(
+                        f"skipping: {src_fullpath} --> {dst_fullpath}")
 
 
 class DeviceSync(BaseSynchronization):
@@ -228,6 +348,8 @@ class DeviceSync(BaseSynchronization):
 
 
 if __name__ == "__main__":
-    test = CursorSync("G:\\Temp", "G:\\MeadEyetoe_FileTemp\\taskmgr_agent")
-    for i in test.run():
-        print(i)
+    bs = sclog.BaseLogging("KMKMKMK", "G:\\Temp\\l.txt", "G:\\Temp\\g.txt")
+    sync_con.init(bs)
+    test = CursorSync(
+        bs, "D:\\foo", "D:\\bar")
+    test.run()

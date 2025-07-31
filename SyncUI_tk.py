@@ -7,30 +7,6 @@ from tkinter import ttk
 from typing import AnyStr, Sequence, Mapping
 
 
-class GUI_old:
-    def __init__(self):
-        self.settings = {"foo": 1, "bar": 1, "baz": 1}
-        self.root = tk.Tk()
-        self.window = ttk.Treeview(self.root)
-        tk.Button(self.root, text="Set foo",
-                  command=self.make_callback("foo", 2)).pack()
-        tk.Button(self.root, text="Set bar",
-                  command=self.make_callback("bar", 2)).pack()
-        tk.Button(self.root, text="Set baz",
-                  command=self.make_callback("baz", 2)).pack()
-        # ...etc
-
-    def make_callback(self, key, val):
-        def make_something(*args):
-            self.settings[key] = val
-            print(self.settings)
-        return make_something
-
-    def show_variable(self):
-        for k, v in self.settings.items():
-            pass
-
-
 class GUI:
     def __init__(self, config_fp):
         with open(config_fp, "r", encoding="utf-8") as f:

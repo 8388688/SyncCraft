@@ -8,6 +8,7 @@ import time
 import shutil
 from typing import Callable
 
+
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 
 
@@ -38,7 +39,7 @@ def get_exec():
 def get_time(format_="%Y-%m-%dT%H.%M.%SZ"):
     # 1.9 及以前的 SyncCraft 记录日志需要调用这个函数
     import warnings
-    warnings.warn("1.10+ 及以后的版本不再需要该函数来格式化日志",
+    warnings.warn("2.0+ 及以后的版本不再需要该函数来格式化日志",
                   PendingDeprecationWarning, stacklevel=4)
     return time.strftime(format_, time.localtime(time()))
 

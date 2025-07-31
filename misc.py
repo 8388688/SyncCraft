@@ -1,6 +1,7 @@
-import sys, hashlib
+import sys
+import hashlib
 from ctypes import windll
-from os import getenv
+from os import getenv, makedirs
 from os.path import abspath, join, dirname
 from time import time, localtime, strftime
 
@@ -11,7 +12,7 @@ build_time = 1747756800
 TITLE = "SyncCraft"
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 global_settings_dirp = join(getenv("APPDATA"), TITLE)
-st.safe_md(global_settings_dirp, quiet=True)
+makedirs(global_settings_dirp, exist_ok=True)
 global_settings_fp = join(global_settings_dirp, "globalsettings.sc_json")
 
 """
@@ -40,6 +41,9 @@ def resource_path(relative):
 
 
 def is_admin():
+    import warnings
+    warnings.warn("在 sync_api.py 中", DeprecationWarning,
+                  stacklevel=4)
     try:
         return windll.shell32.IsUserAnAdmin()
     except Exception as e:
@@ -47,7 +51,10 @@ def is_admin():
 
 
 def is_exec():
-    return hasattr(sys, '_MEIPASS')
+    import warnings
+    warnings.warn("在 sync_api.py 中", DeprecationWarning,
+                  stacklevel=4)
+    return hasattr(sys, "_MEIPASS")
 
 
 def get_exec():
@@ -72,6 +79,9 @@ def get_hms(timestamp: float | int):
 
 
 def get_exception_info():
+    import warnings
+    warnings.warn("在 sync_api.py 中", DeprecationWarning,
+                  stacklevel=4)
     return sys.exc_info()
 
 
@@ -84,6 +94,9 @@ def md5sum_2(fpath: str, algorithm: str, buffering: int = 8096) -> str:
 
 
 def sc_notate_auto(number):
+    import warnings
+    warnings.warn("在 sync_api.py 中", DeprecationWarning,
+                  stacklevel=4)
     return st.scientific_notate(number, rate=1024, custom_seq=rate_list)
 
 
@@ -97,9 +110,9 @@ help_text = {
     "add": """添加文件夹：如果 dst 为相对路径，
     系统会自动将其转换为相对同步根目录的路径""",
     "parameter": """参数设置：
-    /forever: 
-    /no_gui: 
-    /build: 
+    /forever:
+    /no_gui:
+    /build:
     """,
     "settings": ("""
 reserved_size：硬盘的保留空间，

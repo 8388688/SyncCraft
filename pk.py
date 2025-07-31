@@ -9,36 +9,38 @@ import stat
 from builtins import open as fopen
 from json import loads, dumps
 from os import (chdir, rename, remove, rmdir, getenv, listdir, listmounts,
-                listvolumes, getcwd, stat as os_stat, chmod, unlink)
+                listvolumes, getcwd, stat as os_stat, chmod, unlink, makedirs)
 from os.path import exists, join, isfile, isdir, realpath, dirname
 # from psutil import disk_partitions
 from shutil import copy2, copystat, disk_usage
 from subprocess import run as command
-from sys import exit as sys_exit, executable as sys_executable
-from time import time
-from traceback import format_exception
+from sys import exit as sys_exit
+from time import time, strftime
 from typing import Literal, Callable, Mapping
 
 import colorama
-import ntsecuritycon
 import threading
-import win32api
 import win32file
 import win32security
 
-from misc import (is_admin, __version__, windll, is_exec, TITLE, get_time,
-                  get_exec, get_exception_info)
-from simple_tools import safe_md, timestamp, wait, fp_gen, get_md5, dec_to_r_convert
+from misc import (__version__, TITLE, get_time, get_exec)
+from simple_tools import wait, fp_gen, get_md5, dec_to_r_convert
 import sync_api
 import sync_con
 
 
 def set_volume_label(drive, label):
+    import warnings
+    warnings.warn("在 sync_con.py 中", DeprecationWarning,
+                  stacklevel=4)
     win32file.SetVolumeLabel(drive, label)
     return label
 
 
 def get_freespace_shutil(folder):
+    import warnings
+    warnings.warn("在 sync_api.py 中", DeprecationWarning,
+                  stacklevel=4)
     _, _, free = disk_usage(folder)
     return free
 
@@ -148,9 +150,9 @@ class Peeker:
             self.log_dirp, f"pk_api_{time() // 86400}.log")  # 86400: 一天一份日志
         self.log_fiet_live = True
         self.gs_log_fiet_live = True
-        safe_md(self.GLOBAL_LOG_DIRP, quiet=True)
-        safe_md(self.SYNC_ROOT_FP, quiet=True)
-        safe_md(self.log_dirp, quiet=True)
+        makedirs(self.GLOBAL_LOG_DIRP, exist_ok=True)
+        makedirs(self.SYNC_ROOT_FP, exist_ok=True)
+        makedirs(self.log_dirp, exist_ok=True)
 
         self.protection = True
         self.hidden = True
@@ -395,7 +397,7 @@ class Peeker:
         # 虽然使用了一个二重循环，但运行效率比加入 dimensional_list() 好得多
         for i in ([self.SYNC_ROOT_FP, ], [join(self.SYNC_ROOT_FP, i) for i in self.__cursors_dst]):
             for j in i:
-                safe_md(j, quiet=True)
+                makedirs(j, exist_ok=True)
                 self.record_fx(f"create dir: {j}")
                 # TODO: attrib %j +s +h
 
@@ -409,36 +411,21 @@ class Peeker:
                        tag=self.LOG_NOTICE)
 
     def get_admin(self, take=False, quiet=False):
-        if is_admin():
-            if not quiet:
-                self.record_fx(f"正在使用管理员权限运行 - 非常棒！", tag=self.LOG_NOTICE)
-            return True
+        # 已在 sync_con.py 改写
+        import warnings
+        warnings.warn("已在 sync_con..py 改写",
+                      PendingDeprecationWarning, stacklevel=4)
+        if take:
+            return sync_con.run_as_admin([self.SYNC_ROOT_FP])
         else:
-            if not quiet:
-                self.record_fx(f"尝试使用管理员权限运行 :(", tag=self.LOG_WARNING)
-            if take:
-                suffix = self.execute_fp.replace(
-                    "/", "\\").split("\\")[-1].split(".")[-1]
-                self.record_fx(
-                    f"准备以管理员身份重启. . . . . . {sys_executable=}, {self.execute_fp=}, {suffix=}", tag=self.LOG_NOTICE)
-                self.save(ren=True)
-                chdir(getenv("Temp"))
-                if is_exec():
-                    windll.shell32.ShellExecuteW(
-                        None, "runas", self.execute_fp, self.SYNC_ROOT_FP, None, 1)
-                else:
-                    windll.shell32.ShellExecuteW(
-                        None, "runas", sys_executable, " ".join((self.execute_fp, self.SYNC_ROOT_FP)), None, 1)
-                sys_exit(0)
-            else:
-                return False
+            return sync_api.is_admin()
 
     def record_exc_info(self, verbose=True):
         # 已在 sync_con.py 改写
         import warnings
         warnings.warn("已在 sync_con.py 改写",
                       PendingDeprecationWarning, stacklevel=4)
-        return sync_api.record_exc_info(verbose=verbose)
+        return sync_con.record_exc_info(verbose=verbose)
 
     def update_cursor(self):
         self.__cursors_src = list(self.cursors.keys())
@@ -448,7 +435,7 @@ class Peeker:
 
     def __rename_and_register(self, __dir, __from_src=None):
         if exists(__dir):
-            new_fn = __dir + timestamp(presets=3, no_beauty=True)
+            new_fn = __dir + strftime("%Y%m%d%H%M%S")
             self.record_fx(f"rename {__dir} -> {new_fn}")
             if __from_src is None:
                 self.synced_archives.append(new_fn)
@@ -697,7 +684,7 @@ class Peeker:
         # filepath[0] -> filepath
         # filepath[1] -> self.cursors[filepath]['dst']
         if code.get("exists"):
-            safe_md(self.cursors[filepath]["dst"], quiet=True)
+            makedirs(self.cursors[filepath]["dst"], exist_ok=True)
             self.record_fx(f"{self.cursors[filepath]["dst"]} 已创建")
         else:
             self.record_fx(f"源文件夹 {filepath} 不存在！")
@@ -788,7 +775,7 @@ class Peeker:
                             # ↑ 已修复
                             if not isdir(fname):
                                 self.record_fx(f"创建目录: {fname}")
-                                safe_md(fname, quiet=True)
+                                makedirs(fname, exist_ok=True)
                                 copystat(sname, fname)
                             else:
                                 pass
@@ -933,7 +920,3 @@ class Peeker:
 
         self.sync_flag = True
         self.record_fx("run_until_gen: 同步旗标已解锁")
-
-
-if __name__ == "__main__":
-    pass
