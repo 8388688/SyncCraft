@@ -332,7 +332,7 @@ class ReplacementSync(BaseSynchronization):
         # 是否强制替换已存在的文件
 
     def touch(self, fp, filetype):
-        """创建文件，注意 fp 不是相对路径"""
+        """创建文件，注意 fp 【不是】相对路径（但不一定是绝对路径）"""
         if not os.path.exists(fp) or self.put_in_force:
             if os.path.exists(fp):
                 self.logger.notice(f"replace(强制替换): {fp}")
@@ -360,18 +360,26 @@ class ReplacementSync(BaseSynchronization):
             self.logger.notice(f"move: {src} --> {dst}")
             shutil.move(src, dst)
 
+    def delete_single(self, fp_or_dirp):
+        # fp_or_dirp 是【绝对路径】
+        if os.path.exists(fp_or_dirp):
+            if os.path.isfile(fp_or_dirp):
+                self.logger.notice(f"delete file: {fp_or_dirp}")
+                os.unlink(fp_or_dirp)
+            elif os.path.isdir(fp_or_dirp):
+                self.logger.notice(f"delete dir: {fp_or_dirp}")
+                os.rmdir(fp_or_dirp)
+            else:
+                self.logger.warning(f"{fp_or_dirp} - unknown file type.")
+                os.unlink(fp_or_dirp)
+        else:
+            self.logger.error(f"delete failed - {fp_or_dirp} not found.")
+
     def delete(self, fp):
+        # 同上，绝对路径
         for i in self.list_src(fp, topdown=False):
             i_fullpath = os.path.join(fp, i)
-            if os.path.isfile(i_fullpath):
-                os.unlink(i_fullpath)
-                self.logger.notice(f"delete file: {i}")
-            elif os.path.isdir(i_fullpath):
-                os.rmdir(i_fullpath)
-                self.logger.notice(f"delete dir: {i}")
-            else:
-                self.logger.warning(f"{i} - unknown file type.")
-                os.unlink(i_fullpath)
+            self.delete_single(i_fullpath)
         else:
             os.rmdir(fp)
 
@@ -392,13 +400,17 @@ class ReplacementSync(BaseSynchronization):
                 tmp = dict()
                 for k, v in self.move_files.values():
                     if not k:
-                        tmp.update({os.path.join(self.src, v)
-                                   : self.__class__.FILE_TYPE})
+                        tmp.update({os.path.join(self.src, v): self.__class__.FILE_TYPE})
                 self.touch_pr(tmp)
                 del tmp
-            temp_move = self.move_files
+            temp_remove: dict = {}  # 记录格式：【相对】路径
+            for k, v in self.move_files.items():
+                if k and not v:
+                    temp_remove.update({k: v})
+            self.logger.debug(f"{self.move_files=}, {temp_remove=}")
             for i in self.list_src(self.src):
                 # i: 相对路径
+                self.logger.info(f"{i=}")
                 src_fullpath = os.path.join(self.src, i)
                 dst_fullpath = os.path.join(self.dst, i)
                 if os.path.isfile(src_fullpath):
@@ -410,6 +422,8 @@ class ReplacementSync(BaseSynchronization):
                     else:
                         self.logger.notice(
                             f"skipping file: {src_fullpath} --> {dst_fullpath}")
+                    if os.path.dirname(i) in temp_remove.keys() or i in temp_remove.keys():
+                        self.delete_single(src_fullpath)
                 else:
                     if not os.path.exists(dst_fullpath):
                         os.mkdir(dst_fullpath)
@@ -419,27 +433,37 @@ class ReplacementSync(BaseSynchronization):
                     else:
                         self.logger.notice(
                             f"skipping dir: {src_fullpath} --> {dst_fullpath}")
+
+                    if os.path.dirname(i) in temp_remove.keys():
+                        temp_remove.update({i: ""})
+                #####################################################
                 if i in self.move_files.keys():
                     if self.move_files[i]:
                         # move 函数中本身已经记录了日志，这里就无需二遍记录了
                         if os.path.isabs(self.move_files[i]):
+                            self.logger.info(f"绝对路径：修正后为 {self.move_files[i]}")
                             self.move(src_fullpath, self.move_files[i])
                         else:
+                            self.logger.info(f"相对路径：修正后为 {os.path.join(
+                                self.src, self.move_files[i])}")
                             self.move(src_fullpath, os.path.join(
                                 self.src, self.move_files[i]))
                     else:
                         # delete 同上
-                        self.delete(src_fullpath)
+                        self.logger.info(
+                            f"不要重复删除：{src_fullpath}")
+                ######################################################
             if not self.pur_prior:
                 self.logger.warning(
                     f"目前不支持 {self.__class__.DIR_TYPE} 模式")
                 tmp = dict()
                 for k, v in self.move_files.items():
                     if not k:
-                        tmp.update({os.path.join(self.src, v)
-                                   : self.__class__.FILE_TYPE})
+                        tmp.update({os.path.join(self.src, v): self.__class__.FILE_TYPE})
                 self.touch_pr(tmp)
                 del tmp
+                for k, _ in temp_remove.items():
+                    self.delete_single(os.path.join(self.src, k))
         else:
             self.logger.notice(f"{self.src}: is_synchronizable 不允许同步")
 
