@@ -223,7 +223,7 @@ class BaseSynchronization:
     sync_type = "BaseSynchronization"  # 子类必须重写 sync_type 类变量，并且此方法对于实例来说为只读
 
     def __init__(self, log_root: sclog.BaseLogging, src, dst):
-        self.logger = log_root
+        self.logger: sclog.BaseLogging = log_root
         self.src = src
         self.dst = dst
         self.logger.notice(f"type: {self.__class__.sync_type}")
@@ -232,26 +232,33 @@ class BaseSynchronization:
         # 当前是否具备了开始同步的条件。
         return os.path.exists(self.src)
 
-    def list_src(self, __fp):
+    def list_src(self, __fp, topdown=True):
         """
 
         以【相对路径】的方式，
-        【按同步的顺序】逐个地输出 src 中【应该被同步的】文件 \\
+        【按同步的顺序】逐个地输出 __fp 中【应该被同步的】文件 \\
         （意即在某些情况下不必输出 src 下的全部文件）。
+
+        传入的 __fp 必须是目录
         """
         for i in os.listdir(__fp):
             fullpath = os.path.join(__fp, i)
-
             if os.path.isdir(fullpath):
-                yield i  # 也输出文件夹
+                if topdown:
+                    yield i  # 也输出文件夹
                 for j in self.list_src(fullpath):
                     yield os.path.join(i, j)
+                if not topdown:
+                    yield i
             else:
                 yield i
 
     def run(self) -> None:
         # 执行同步，本函数没有返回值。
         if self.is_synchronizable():
+            if not os.path.exists(self.dst):
+                self.logger.warning(f"目标根文件夹不存在 - {self.dst}")
+                os.makedirs(self.dst)
             for i in self.list_src(self.src):
                 src_fullpath = os.path.join(self.src, i)
                 dst_fullpath = os.path.join(self.dst, i)
@@ -262,8 +269,9 @@ class BaseSynchronization:
                             f"copying file: {src_fullpath} --> {dst_fullpath}")
                     else:
                         os.mkdir(dst_fullpath)
+                        shutil.copystat(src_fullpath, dst_fullpath)
                         self.logger.notice(
-                            f"copying dir:{src_fullpath} --> {dst_fullpath}")
+                            f"copying dir: {src_fullpath} --> {dst_fullpath}")
                 else:
                     self.logger.notice(
                         f"skipping: {src_fullpath} --> {dst_fullpath}")
@@ -272,6 +280,9 @@ class BaseSynchronization:
 
 
 class SolidSync(BaseSynchronization):
+    """固实同步，同步完成后会保护 dst 文件夹
+
+    """
     sync_type = "solid"
 
     def __init__(self, log_root, src, dst):
@@ -305,51 +316,133 @@ class CursorSync(BaseSynchronization):
 class ReplacementSync(BaseSynchronization):
     """Trojan: 同步四大基类中唯一一个能够操作 src 中文件的类"""
     sync_type = "replacement"
+    FILE_TYPE = "file"
+    DIR_TYPE = "dir"
 
     def __init__(self, log_root, src, dst):
         super().__init__(log_root, src, dst)
-        self.touch_files = []
-        self.move_files = []
-        self.delete_files = []
+        self.move_files = {}
+        # {src1: dst1, src2: dst2, ...}
+        # 若 src 为空，表示 touch 文件
+        # src 不为空而 dst 为空，表示 rm 文件
+        # src, dst 都不为空表示 mv 文件
+        self.pur_prior = False
+        # True 为替换文件优先于同步，反之则为同步优先于替换
+        self.put_in_force = False
+        # 是否强制替换已存在的文件
 
-    def touch(self, fp):
-        """创建文件"""
-        pass
+    def touch(self, fp, filetype):
+        """创建文件，注意 fp 不是相对路径"""
+        if not os.path.exists(fp) or self.put_in_force:
+            if os.path.exists(fp):
+                self.logger.notice(f"replace(强制替换): {fp}")
+                self.delete(fp)
+            if filetype == self.__class__.FILE_TYPE:
+                self.logger.notice(f"make file: {fp}")
+                open(fp, "wb").close()
+            elif filetype == self.__class__.DIR_TYPE:
+                self.logger.notice(f"make dir: {fp}")
+                os.makedirs(fp, exist_ok=False)
+            else:
+                self.logger.error(f"TypeError: 错误的文件类型 - {filetype}")
+        else:
+            self.logger.error(f"{fp} - File already exists")
 
-    def move(self, fp):
+    def move(self, src, dst):
         """移动 & 重命名文件"""
-        pass
+        if os.path.dirname(src) == dst:
+            self.logger.warning(f"{src} 的目标文件夹和 {dst} 是同一文件夹")
+            return
+        if os.path.isfile(dst):
+            self.logger.error(
+                f"Cannot move {src} to {dst} - File already exists.")
+        else:
+            self.logger.notice(f"move: {src} --> {dst}")
+            shutil.move(src, dst)
 
     def delete(self, fp):
-        pass
+        for i in self.list_src(fp, topdown=False):
+            i_fullpath = os.path.join(fp, i)
+            if os.path.isfile(i_fullpath):
+                os.unlink(i_fullpath)
+                self.logger.notice(f"delete file: {i}")
+            elif os.path.isdir(i_fullpath):
+                os.rmdir(i_fullpath)
+                self.logger.notice(f"delete dir: {i}")
+            else:
+                self.logger.warning(f"{i} - unknown file type.")
+                os.unlink(i_fullpath)
+        else:
+            os.rmdir(fp)
+
+    def touch_pr(self, dst: dict):
+        for k, v in dst.items():
+            if k:
+                self.touch(k, v)
 
     def run(self):
         # 完全重写 BaseSynchronziation 的父类
+        if not os.path.exists(self.dst):
+            self.logger.warning(f"目标根文件夹不存在 - {self.dst}")
+            os.makedirs(self.dst)
         if self.is_synchronizable():
+            if self.pur_prior:
+                self.logger.warning(
+                    f"目前不支持 {self.__class__.DIR_TYPE} 模式")
+                tmp = dict()
+                for k, v in self.move_files.values():
+                    if not k:
+                        tmp.update({os.path.join(self.src, v)
+                                   : self.__class__.FILE_TYPE})
+                self.touch_pr(tmp)
+                del tmp
+            temp_move = self.move_files
             for i in self.list_src(self.src):
+                # i: 相对路径
                 src_fullpath = os.path.join(self.src, i)
                 dst_fullpath = os.path.join(self.dst, i)
-                if not os.path.exists(dst_fullpath):
-                    if os.path.isfile(src_fullpath):
+                if os.path.isfile(src_fullpath):
+                    if not os.path.exists(dst_fullpath):
+                        # dst 对应路径不存在文件，执行同步
                         shutil.copy2(src_fullpath, dst_fullpath)
                         self.logger.notice(
                             f"copying file: {src_fullpath} --> {dst_fullpath}")
                     else:
-                        os.mkdir(dst_fullpath)
                         self.logger.notice(
-                            f"copying dir:{src_fullpath} --> {dst_fullpath}")
+                            f"skipping file: {src_fullpath} --> {dst_fullpath}")
                 else:
-                    self.logger.notice(
-                        f"skipping: {src_fullpath} --> {dst_fullpath}")
+                    if not os.path.exists(dst_fullpath):
+                        os.mkdir(dst_fullpath)
+                        shutil.copystat(src_fullpath, dst_fullpath)
+                        self.logger.notice(
+                            f"copying dir: {src_fullpath} --> {dst_fullpath}")
+                    else:
+                        self.logger.notice(
+                            f"skipping dir: {src_fullpath} --> {dst_fullpath}")
+                if i in self.move_files.keys():
+                    if self.move_files[i]:
+                        # move 函数中本身已经记录了日志，这里就无需二遍记录了
+                        if os.path.isabs(self.move_files[i]):
+                            self.move(src_fullpath, self.move_files[i])
+                        else:
+                            self.move(src_fullpath, os.path.join(
+                                self.src, self.move_files[i]))
+                    else:
+                        # delete 同上
+                        self.delete(src_fullpath)
+            if not self.pur_prior:
+                self.logger.warning(
+                    f"目前不支持 {self.__class__.DIR_TYPE} 模式")
+                tmp = dict()
+                for k, v in self.move_files.items():
+                    if not k:
+                        tmp.update({os.path.join(self.src, v)
+                                   : self.__class__.FILE_TYPE})
+                self.touch_pr(tmp)
+                del tmp
+        else:
+            self.logger.notice(f"{self.src}: is_synchronizable 不允许同步")
 
 
 class DeviceSync(BaseSynchronization):
     sync_type = "device"
-
-
-if __name__ == "__main__":
-    bs = sclog.BaseLogging("KMKMKMK", "G:\\Temp\\l.txt", "G:\\Temp\\g.txt")
-    sync_con.init(bs)
-    test = CursorSync(
-        bs, "D:\\foo", "D:\\bar")
-    test.run()

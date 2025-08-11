@@ -25,7 +25,7 @@ class BaseLogging(logging.Logger):
         self.setLevel(logging.DEBUG)
 
         self.console_formatter = colorlog.ColoredFormatter(
-            "%(log_color)s[%(asctime)s.%(msecs)03d] %(filename)s -> %(name)s %(funcName)s line:%(lineno)d [%(levelname)s] : %(message)s",
+            "%(log_color)s[%(asctime)s.%(msecs)03d] %(filename)s -> %(name)s %(funcName)s line:%(lineno)d [%(levelname)s]: %(message)s",
             datefmt=self.ASC_TIME_FORMAT,
             log_colors={
                 "DEBUG": "white",
