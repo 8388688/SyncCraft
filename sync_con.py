@@ -170,10 +170,9 @@ def get_volume_label(drive) -> str | None:
     try:
         return win32api.GetVolumeInformation(drive)[0]
     except pywintypes.error as e:
-        _root.error(f"sc1.10+检查卷标时出现错误")
+        _root.error(f"检查卷标时出现错误")
         _root.error(f"Error Code {e.winerror}: {e.strerror}")
-        # _root.exception("sc1.10+检查卷标时出现错误\n")
-        record_exc_info(True)
+        record_exc_info(False)
         return None
 
 
@@ -184,7 +183,7 @@ def label2mountId(drive):
             i_mount = os.listmounts(i)
         except FileNotFoundError:
             _root.error(f"文件系统错误 - {i} 无法映射到对应的挂载点")
-            record_exc_info(True)
+            record_exc_info(False)
             return False
         else:
             if os.path.realpath(drive) in [os.path.realpath(j, strict=False) for j in i_mount]:

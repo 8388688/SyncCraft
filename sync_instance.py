@@ -1,9 +1,11 @@
 import os
-from abc import ABC, abstractmethod
-from typing import Literal, AnyStr, MutableSequence
-import simple_tools as st
+import json
 import shutil
 import time
+from abc import ABC, abstractmethod
+from typing import Literal, AnyStr, MutableSequence
+
+import simple_tools as st
 
 import sync_api
 import sync_con
@@ -111,9 +113,6 @@ class BaseSynchronization_old():
             return getattr(self, attribute)
         else:
             return default
-
-    def get_new_name(self, old_name: AnyStr):
-        return old_name + get_time
 
     def archive(self, __fp=None):
         if __fp is None:
@@ -226,7 +225,7 @@ class BaseSynchronization:
         self.logger: sclog.BaseLogging = log_root
         self.src = src
         self.dst = dst
-        self.logger.notice(f"type: {self.__class__.sync_type}")
+        self.logger.debug(f"type: {self.__class__.sync_type}")
 
     def is_synchronizable(self) -> bool:
         # 当前是否具备了开始同步的条件。
@@ -290,10 +289,17 @@ class SolidSync(BaseSynchronization):
 
     def run(self):
         # run_beginning
-        sync_con.ACL_config(self.dst, False)
+        if os.path.exists(self.dst):
+            sync_con.ACL_config(self.dst, False)
+        else:
+            self.logger.info(f"{self.dst} 不存在")
         super().run()
         # run_completion
-        sync_con.ACL_config(self.dst, True)
+        if os.path.exists(self.src):
+            # 这里进行存在性检查是为了向后兼容做考虑
+            sync_con.ACL_config(self.dst, True)
+        else:
+            self.logger.info(f"{self.dst} 不存在")
 
 
 class CursorSync(BaseSynchronization):
@@ -323,16 +329,18 @@ class ReplacementSync(BaseSynchronization):
         super().__init__(log_root, src, dst)
         self.move_files = {}
         # {src1: dst1, src2: dst2, ...}
-        # 若 src 为空，表示 touch 文件
         # src 不为空而 dst 为空，表示 rm 文件
         # src, dst 都不为空表示 mv 文件
         self.pur_prior = False
         # True 为替换文件优先于同步，反之则为同步优先于替换
         self.put_in_force = False
         # 是否强制替换已存在的文件
+        self.touch_files = {}
+        # {fp1: filetype1, fp2: filetype2}
 
     def touch(self, fp, filetype):
         """创建文件，注意 fp 【不是】相对路径（但不一定是绝对路径）"""
+        self.logger.info(f"要检测的文件: {fp}")
         if not os.path.exists(fp) or self.put_in_force:
             if os.path.exists(fp):
                 self.logger.notice(f"replace(强制替换): {fp}")
@@ -383,10 +391,10 @@ class ReplacementSync(BaseSynchronization):
         else:
             os.rmdir(fp)
 
-    def touch_pr(self, dst: dict):
+    def touch_pr(self, dst: dict, root_fp):
+        # dst 中的格式均为【相对路径】，这与 delete、touch 和 move 都不一样
         for k, v in dst.items():
-            if k:
-                self.touch(k, v)
+            self.touch(os.path.join(root_fp, k), v)
 
     def run(self):
         # 完全重写 BaseSynchronziation 的父类
@@ -394,23 +402,21 @@ class ReplacementSync(BaseSynchronization):
             self.logger.warning(f"目标根文件夹不存在 - {self.dst}")
             os.makedirs(self.dst)
         if self.is_synchronizable():
-            if self.pur_prior:
-                self.logger.warning(
-                    f"目前不支持 {self.__class__.DIR_TYPE} 模式")
-                tmp = dict()
-                for k, v in self.move_files.values():
-                    if not k:
-                        tmp.update({os.path.join(self.src, v): self.__class__.FILE_TYPE})
-                self.touch_pr(tmp)
-                del tmp
             temp_remove: dict = {}  # 记录格式：【相对】路径
             for k, v in self.move_files.items():
                 if k and not v:
                     temp_remove.update({k: v})
             self.logger.debug(f"{self.move_files=}, {temp_remove=}")
+            ################
+            # 这一框代码会在后面有重复
+            if self.pur_prior:
+                self.touch_pr(self.touch_files, self.src)
+                for k, _ in temp_remove.items():
+                    self.delete(os.path.join(self.src, k))
+            ################
             for i in self.list_src(self.src):
                 # i: 相对路径
-                self.logger.info(f"{i=}")
+                self.logger.debug(f"{i=}")
                 src_fullpath = os.path.join(self.src, i)
                 dst_fullpath = os.path.join(self.dst, i)
                 if os.path.isfile(src_fullpath):
@@ -422,7 +428,7 @@ class ReplacementSync(BaseSynchronization):
                     else:
                         self.logger.notice(
                             f"skipping file: {src_fullpath} --> {dst_fullpath}")
-                    if os.path.dirname(i) in temp_remove.keys() or i in temp_remove.keys():
+                    if not self.pur_prior and (os.path.dirname(i) in temp_remove.keys() or i in temp_remove.keys()):
                         self.delete_single(src_fullpath)
                 else:
                     if not os.path.exists(dst_fullpath):
@@ -436,7 +442,7 @@ class ReplacementSync(BaseSynchronization):
 
                     if os.path.dirname(i) in temp_remove.keys():
                         temp_remove.update({i: ""})
-                #####################################################
+                #############
                 if i in self.move_files.keys():
                     if self.move_files[i]:
                         # move 函数中本身已经记录了日志，这里就无需二遍记录了
@@ -452,16 +458,9 @@ class ReplacementSync(BaseSynchronization):
                         # delete 同上
                         self.logger.info(
                             f"不要重复删除：{src_fullpath}")
-                ######################################################
+                #############
             if not self.pur_prior:
-                self.logger.warning(
-                    f"目前不支持 {self.__class__.DIR_TYPE} 模式")
-                tmp = dict()
-                for k, v in self.move_files.items():
-                    if not k:
-                        tmp.update({os.path.join(self.src, v): self.__class__.FILE_TYPE})
-                self.touch_pr(tmp)
-                del tmp
+                self.touch_pr(self.touch_files, self.src)
                 for k, _ in temp_remove.items():
                     self.delete_single(os.path.join(self.src, k))
         else:
@@ -470,3 +469,54 @@ class ReplacementSync(BaseSynchronization):
 
 class DeviceSync(BaseSynchronization):
     sync_type = "device"
+
+    def __init__(self, log_root, src, dst):
+        super().__init__(log_root, src, dst)
+
+    def run(self):
+        root_fp = os.path.splitdrive(self.src)[0]
+        if not root_fp.endswith(os.sep):
+            root_fp += os.sep
+        self.logger.info(f"检查 [{root_fp}] 的卷标")
+        tmp_label = sync_con.get_volume_label(root_fp)
+        if tmp_label is not None:
+            self.logger.notice(f"[{root_fp}] 的卷标是 [{tmp_label}]")
+        else:
+            self.logger.error(f"检查 [{root_fp}] 的卷标失败")
+        self.logger.info(f"检查 [{root_fp}] 的卷 ID")
+        tmp_label = sync_con.label2mountId(root_fp)
+        if tmp_label:
+            self.logger.notice(f"[{root_fp}] 的卷 ID 是 [{tmp_label}]")
+        else:
+            self.logger.error(f"检查 [{root_fp}] 的卷 ID 失败")
+        super().run()
+
+
+all_instance: tuple[type[BaseSynchronization]] = (
+    SolidSync, CursorSync,
+    ReplacementSync, DeviceSync,
+)
+all_showing_instance = ((i, i.sync_type) for i in all_instance)
+
+
+def read_instance(log_root: sclog.BaseLogging, cfg):
+    """通常来说，读取目录应该为 instance.sc_conf"""
+    for i in cfg.keys():
+        for j in all_instance:
+            if j.sync_type == i:
+                # make instance
+                for inst in cfg[i]:
+                    yield j(log_root=log_root, **inst)
+
+
+__all__ = [
+    "all_instance", "all_showing_instance",
+
+    "BaseSynchronization",
+    "SolidSync",
+    "CursorSync",
+    "ReplacementSync",
+    "DeviceSync",
+
+    "read_instance"
+]
