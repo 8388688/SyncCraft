@@ -12,10 +12,6 @@ from typing import Callable
 rate_list = ("Bytes", "KB", "MB", "GB", "TB", "PB", "EB")
 
 
-def resource_path(relative):
-    return os.path.join(os.path.dirname(__file__), relative)
-
-
 def is_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
@@ -34,6 +30,13 @@ def get_exec():
         return sys.executable
     else:
         return os.path.abspath(__file__)
+
+
+def resource_path(relative):
+    return os.path.join(os.path.dirname(get_exec()), relative)
+
+
+get_resource = resource_path
 
 
 def get_time(format_="%Y-%m-%dT%H.%M.%SZ"):

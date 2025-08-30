@@ -163,17 +163,6 @@ class GUI:
             )
 
 
-def get_config(fp):
-    with open(fp, "rb") as f:
-        result = json.loads(f.read())
-    return result
-
-
-def put_config(fp, json0):
-    with open(fp, "w", encoding="utf-8") as f:
-        f.write(json.dumps(json0, ))
-
-
 if __name__ == "__main__":
     gui = GUI(filedialog.askopenfilename(
         filetypes=(("SyncCraft 配置文件", "*.sc_conf"), ("所有文件", "*.*"))))

@@ -19,7 +19,7 @@ class BaseLogging(logging.Logger):
 
     ASC_TIME_FORMAT = "%Y-%m-%dT%H.%M.%SZ"
 
-    def __init__(self, name: str, local_log_fp, global_log_fp):
+    def __init__(self, name: str, local_log_fp):
         super().__init__(name)
         logging.addLevelName(self.L_NOTICE, "NOTICE")  # 设置自定义日志级别的名称
         self.setLevel(logging.DEBUG)
@@ -44,8 +44,6 @@ class BaseLogging(logging.Logger):
         self.local_log = logging.FileHandler(local_log_fp, encoding="utf-8")
         # self.local_log.setLevel(logging.DEBUG)
         self.local_log.setFormatter(self.file_formatter)
-        self.global_log = logging.FileHandler(global_log_fp, encoding="utf-8")
-        self.global_log.setFormatter(self.file_formatter)
 
         # 使用StreamHandler输出到屏幕
         self.console = logging.StreamHandler()
@@ -55,10 +53,8 @@ class BaseLogging(logging.Logger):
         if not self.handlers:
             self.addHandler(self.console)
             self.addHandler(self.local_log)
-            self.addHandler(self.global_log)
         self.console.close()
         self.local_log.close()
-        self.global_log.close()
 
     # def log(self, *__text, tag, sep=" ", end="\n"):
         # msg = sep.join(str(i) for i in __text) + end
@@ -70,11 +66,9 @@ class BaseLogging(logging.Logger):
 
     def commit(self):
         self.local_log.flush()
-        self.global_log.flush()
 
     def terminate(self):
         self.local_log.close()
-        self.global_log.close()
 
 
 # TITLE = "SyncCraft 2.0 Pre-Alpha"

@@ -1,5 +1,6 @@
 import os
 import json
+import random
 import shutil
 import time
 from abc import ABC, abstractmethod
@@ -325,9 +326,9 @@ class ReplacementSync(BaseSynchronization):
     FILE_TYPE = "file"
     DIR_TYPE = "dir"
 
-    def __init__(self, log_root, src, dst):
+    def __init__(self, log_root, src, dst, move_files=dict(), touch_files=dict()):
         super().__init__(log_root, src, dst)
-        self.move_files = {}
+        self.move_files = move_files
         # {src1: dst1, src2: dst2, ...}
         # src 不为空而 dst 为空，表示 rm 文件
         # src, dst 都不为空表示 mv 文件
@@ -335,8 +336,26 @@ class ReplacementSync(BaseSynchronization):
         # True 为替换文件优先于同步，反之则为同步优先于替换
         self.put_in_force = False
         # 是否强制替换已存在的文件
-        self.touch_files = {}
+        self.touch_files = touch_files
         # {fp1: filetype1, fp2: filetype2}
+
+    def touch_file_api(self, fp):
+        open(fp, "wb").close()
+
+    def touch_dir_api(self, fp):
+        os.makedirs(fp, exist_ok=False)
+
+    def move_file_api(self, src, dst):
+        shutil.move(self, src, dst)
+
+    def move_dir_api(self, src, dst):
+        shutil.move(self, src, dst)
+
+    def del_file_api(self, fp):
+        os.unlink(fp)
+
+    def del_dir_api(self, fp):
+        os.rmdir(fp)
 
     def touch(self, fp, filetype):
         """创建文件，注意 fp 【不是】相对路径（但不一定是绝对路径）"""
@@ -347,10 +366,10 @@ class ReplacementSync(BaseSynchronization):
                 self.delete(fp)
             if filetype == self.__class__.FILE_TYPE:
                 self.logger.notice(f"make file: {fp}")
-                open(fp, "wb").close()
+                self.touch_file_api(fp)
             elif filetype == self.__class__.DIR_TYPE:
                 self.logger.notice(f"make dir: {fp}")
-                os.makedirs(fp, exist_ok=False)
+                self.touch_dir_api(fp)
             else:
                 self.logger.error(f"TypeError: 错误的文件类型 - {filetype}")
         else:
@@ -366,20 +385,20 @@ class ReplacementSync(BaseSynchronization):
                 f"Cannot move {src} to {dst} - File already exists.")
         else:
             self.logger.notice(f"move: {src} --> {dst}")
-            shutil.move(src, dst)
+            self.move_file_api(src, dst)
 
     def delete_single(self, fp_or_dirp):
         # fp_or_dirp 是【绝对路径】
         if os.path.exists(fp_or_dirp):
             if os.path.isfile(fp_or_dirp):
                 self.logger.notice(f"delete file: {fp_or_dirp}")
-                os.unlink(fp_or_dirp)
+                self.del_file_api(fp_or_dirp)
             elif os.path.isdir(fp_or_dirp):
                 self.logger.notice(f"delete dir: {fp_or_dirp}")
-                os.rmdir(fp_or_dirp)
+                self.del_dir_api(fp_or_dirp)
             else:
                 self.logger.warning(f"{fp_or_dirp} - unknown file type.")
-                os.unlink(fp_or_dirp)
+                self.del_file_api(fp_or_dirp)
         else:
             self.logger.error(f"delete failed - {fp_or_dirp} not found.")
 
@@ -389,7 +408,7 @@ class ReplacementSync(BaseSynchronization):
             i_fullpath = os.path.join(fp, i)
             self.delete_single(i_fullpath)
         else:
-            os.rmdir(fp)
+            self.del_dir_api(fp)
 
     def touch_pr(self, dst: dict, root_fp):
         # dst 中的格式均为【相对路径】，这与 delete、touch 和 move 都不一样
@@ -402,16 +421,16 @@ class ReplacementSync(BaseSynchronization):
             self.logger.warning(f"目标根文件夹不存在 - {self.dst}")
             os.makedirs(self.dst)
         if self.is_synchronizable():
-            temp_remove: dict = {}  # 记录格式：【相对】路径
+            temp_remove: list = []  # 记录格式：【相对】路径
             for k, v in self.move_files.items():
                 if k and not v:
-                    temp_remove.update({k: v})
+                    temp_remove.append(k)
             self.logger.debug(f"{self.move_files=}, {temp_remove=}")
             ################
             # 这一框代码会在后面有重复
             if self.pur_prior:
                 self.touch_pr(self.touch_files, self.src)
-                for k, _ in temp_remove.items():
+                for k in temp_remove:
                     self.delete(os.path.join(self.src, k))
             ################
             for i in self.list_src(self.src):
@@ -428,7 +447,7 @@ class ReplacementSync(BaseSynchronization):
                     else:
                         self.logger.notice(
                             f"skipping file: {src_fullpath} --> {dst_fullpath}")
-                    if not self.pur_prior and (os.path.dirname(i) in temp_remove.keys() or i in temp_remove.keys()):
+                    if not self.pur_prior and (os.path.dirname(i) in temp_remove or i in temp_remove):
                         self.delete_single(src_fullpath)
                 else:
                     if not os.path.exists(dst_fullpath):
@@ -440,8 +459,8 @@ class ReplacementSync(BaseSynchronization):
                         self.logger.notice(
                             f"skipping dir: {src_fullpath} --> {dst_fullpath}")
 
-                    if os.path.dirname(i) in temp_remove.keys():
-                        temp_remove.update({i: ""})
+                    if os.path.dirname(i) in temp_remove:
+                        temp_remove.append(i)
                 #############
                 if i in self.move_files.keys():
                     if self.move_files[i]:
@@ -461,10 +480,90 @@ class ReplacementSync(BaseSynchronization):
                 #############
             if not self.pur_prior:
                 self.touch_pr(self.touch_files, self.src)
-                for k, _ in temp_remove.items():
+                self.logger.debug(f"{temp_remove=}")
+                for k in reversed(temp_remove):
                     self.delete_single(os.path.join(self.src, k))
         else:
             self.logger.notice(f"{self.src}: is_synchronizable 不允许同步")
+
+
+class RepSpp(ReplacementSync):
+    """替换文件增强版
+
+    这个类对删除文件的方法进行了增强，并添加了白名单机制
+    """
+    sync_type = "replacement++"
+
+    def __init__(self, log_root, src, dst, move_files=dict(), touch_files=dict(), del_type=0, after_delete=True):
+        super().__init__(log_root, src, dst, move_files, touch_files)
+        self.del_type = del_type
+        self.after_delete = after_delete
+        # 0 = 清空文件内容
+        # 1 = 随机数据填充
+        # 2 = 零字节填充
+        self.whitelist = []  # TODO: NotImplemented: 实际上尚未使用
+        self.BUFFER = 131072  # 缓冲区大小
+
+    def appendtowhitelist(self, fp):
+        self.whitelist.append(fp)
+
+    def delete_single(self, fp):
+        # fp 是【绝对路径】
+        if os.path.exists(fp):
+            if os.path.isfile(fp):
+                self.logger.notice(f"delete file: {fp}")
+
+                self.logger.notice(f"删除 {fp} - {self.del_type=}")
+                if self.del_type == 0:
+                    return super().__del_file_api(fp)
+                if self.del_type == 1:
+                    open(fp, "wb").close()
+                    self.logger.debug("清空文件内容")
+                    self.appendtowhitelist(fp)
+                elif self.del_type == 2:
+                    size = os.path.getsize(fp)
+                    cycle, remain = divmod(size, self.BUFFER)
+                    with open(fp, "wb") as f:
+                        for i in range(cycle):
+                            buffer = bytearray()
+                            self.logger.debug(f"随机数据填充 - 第 {i + 1} 轮循环")
+                            for j in range(self.BUFFER):
+                                buffer.append(int(random.random() * 128))
+                            f.write(buffer)
+                        buffer = bytearray()
+                        self.logger.debug("随机数据填充 - 剩余文件碎片")
+                        for j in range(remain):
+                            buffer.append(int(random.random() * 128))
+                        f.write(buffer)
+                    del buffer
+                    self.appendtowhitelist(fp)
+                elif self.del_type == 3:
+                    size = os.path.getsize(fp)
+                    cycle, remain = divmod(size, self.BUFFER)
+                    buffer = bytes(self.BUFFER)
+                    with open(fp, "wb") as f:
+                        for i in range(cycle):
+                            self.logger.debug(f"零字节填充 - 第 {i + 1} 轮循环")
+                            f.write(buffer)
+                        buffer = bytes(remain)
+                        self.logger.debug("零字节填充 - 剩余文件碎片")
+                        f.write(buffer)
+                    del buffer
+                    self.appendtowhitelist(fp)
+
+                if self.after_delete:
+                    return self.del_file_api(fp)
+
+            elif os.path.isdir(fp):
+                if self.after_delete:
+                    self.logger.notice(f"delete dir: {fp}")
+                    self.del_dir_api(fp)
+            else:
+                if self.after_delete:
+                    self.logger.warning(f"{fp} - unknown file type.")
+                    self.del_file_api(fp)
+        else:
+            self.logger.error(f"delete failed - {fp} not found.")
 
 
 class DeviceSync(BaseSynchronization):
@@ -495,8 +594,20 @@ class DeviceSync(BaseSynchronization):
 all_instance: tuple[type[BaseSynchronization]] = (
     SolidSync, CursorSync,
     ReplacementSync, DeviceSync,
+    RepSpp,
 )
 all_showing_instance = ((i, i.sync_type) for i in all_instance)
+
+
+def get_config(fp):
+    with open(fp, "rb") as f:
+        result = json.loads(f.read())
+    return result
+
+
+def put_config(fp, json0):
+    with open(fp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(json0, ))
 
 
 def read_instance(log_root: sclog.BaseLogging, cfg):
@@ -516,7 +627,8 @@ __all__ = [
     "SolidSync",
     "CursorSync",
     "ReplacementSync",
+    "RepSpp",
     "DeviceSync",
 
-    "read_instance"
+    "get_config", "put_config", "read_instance"
 ]
