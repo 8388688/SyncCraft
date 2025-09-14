@@ -37,7 +37,7 @@ class BaseLogging(logging.Logger):
             }
         )
         self.file_formatter = logging.Formatter(
-            "[%(asctime)s.%(msecs)03d] %(filename)s -> %(name)s%(funcName)s line:%(lineno)d [%(levelname)s] : %(message)s",
+            "[%(asctime)s.%(msecs)03d] %(filename)s -> %(name)s %(funcName)s line:%(lineno)d [%(levelname)s]: %(message)s",
             datefmt=self.ASC_TIME_FORMAT,
         )
 

@@ -1,4 +1,6 @@
 .vscode/*
 __pycache__/*
+compile/*
 test.py
 Sync.sc_conf
+log.log

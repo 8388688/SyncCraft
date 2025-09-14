@@ -498,9 +498,10 @@ class RepSpp(ReplacementSync):
         super().__init__(log_root, src, dst, move_files, touch_files)
         self.del_type = del_type
         self.after_delete = after_delete
-        # 0 = 清空文件内容
-        # 1 = 随机数据填充
-        # 2 = 零字节填充
+        # 0 = 继承父类的删除动作
+        # 1 = 清空文件内容
+        # 2 = 随机数据填充
+        # 3 = 零字节填充
         self.whitelist = []  # TODO: NotImplemented: 实际上尚未使用
         self.BUFFER = 131072  # 缓冲区大小
 
