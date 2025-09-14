@@ -253,28 +253,33 @@ class BaseSynchronization:
             else:
                 yield i
 
+    def sync(self):
+        # 同步的核心代码写在这里
+        # 请不要在外部程序直接调用这个函数，而应该使用更加健壮性的 run() 函数
+        for i in self.list_src(self.src):
+            src_fullpath = os.path.join(self.src, i)
+            dst_fullpath = os.path.join(self.dst, i)
+            if not os.path.exists(dst_fullpath):
+                if os.path.isfile(src_fullpath):
+                    shutil.copy2(src_fullpath, dst_fullpath)
+                    self.logger.notice(
+                        f"copying file: {src_fullpath} --> {dst_fullpath}")
+                else:
+                    os.mkdir(dst_fullpath)
+                    shutil.copystat(src_fullpath, dst_fullpath)
+                    self.logger.notice(
+                        f"copying dir: {src_fullpath} --> {dst_fullpath}")
+            else:
+                self.logger.notice(
+                    f"skipping: {src_fullpath} --> {dst_fullpath}")
+
     def run(self) -> None:
         # 执行同步，本函数没有返回值。
         if self.is_synchronizable():
             if not os.path.exists(self.dst):
                 self.logger.warning(f"目标根文件夹不存在 - {self.dst}")
                 os.makedirs(self.dst)
-            for i in self.list_src(self.src):
-                src_fullpath = os.path.join(self.src, i)
-                dst_fullpath = os.path.join(self.dst, i)
-                if not os.path.exists(dst_fullpath):
-                    if os.path.isfile(src_fullpath):
-                        shutil.copy2(src_fullpath, dst_fullpath)
-                        self.logger.notice(
-                            f"copying file: {src_fullpath} --> {dst_fullpath}")
-                    else:
-                        os.mkdir(dst_fullpath)
-                        shutil.copystat(src_fullpath, dst_fullpath)
-                        self.logger.notice(
-                            f"copying dir: {src_fullpath} --> {dst_fullpath}")
-                else:
-                    self.logger.notice(
-                        f"skipping: {src_fullpath} --> {dst_fullpath}")
+            self.sync()
         else:
             self.logger.notice(f"{self.src}: is_synchronizable 不允许同步")
 
@@ -415,76 +420,74 @@ class ReplacementSync(BaseSynchronization):
         for k, v in dst.items():
             self.touch(os.path.join(root_fp, k), v)
 
-    def run(self):
-        # 完全重写 BaseSynchronziation 的父类
-        if not os.path.exists(self.dst):
-            self.logger.warning(f"目标根文件夹不存在 - {self.dst}")
-            os.makedirs(self.dst)
-        if self.is_synchronizable():
-            temp_remove: list = []  # 记录格式：【相对】路径
-            for k, v in self.move_files.items():
-                if k and not v:
-                    temp_remove.append(k)
-            self.logger.debug(f"{self.move_files=}, {temp_remove=}")
-            ################
-            # 这一框代码会在后面有重复
-            if self.pur_prior:
-                self.touch_pr(self.touch_files, self.src)
-                for k in temp_remove:
-                    self.delete(os.path.join(self.src, k))
-            ################
-            for i in self.list_src(self.src):
-                # i: 相对路径
-                self.logger.debug(f"{i=}")
-                src_fullpath = os.path.join(self.src, i)
-                dst_fullpath = os.path.join(self.dst, i)
-                if os.path.isfile(src_fullpath):
-                    if not os.path.exists(dst_fullpath):
-                        # dst 对应路径不存在文件，执行同步
-                        shutil.copy2(src_fullpath, dst_fullpath)
-                        self.logger.notice(
-                            f"copying file: {src_fullpath} --> {dst_fullpath}")
-                    else:
-                        self.logger.notice(
-                            f"skipping file: {src_fullpath} --> {dst_fullpath}")
-                    if not self.pur_prior and (os.path.dirname(i) in temp_remove or i in temp_remove):
-                        self.delete_single(src_fullpath)
+    def sync(self):
+        temp_remove: list = []  # 记录格式：【相对】路径
+        for k, v in self.move_files.items():
+            if k and not v:
+                temp_remove.append(k)
+        self.logger.debug(f"{self.move_files=}, {temp_remove=}")
+        ################
+        # 这一框代码会在后面有重复
+        if self.pur_prior:
+            self.touch_pr(self.touch_files, self.src)
+            for k in temp_remove:
+                # TODO: 是用 delete 还是用 delete_single 函数？
+                self.delete(os.path.join(self.src, k))
+        ################
+        for i in self.list_src(self.src):
+            # i: 相对路径
+            self.logger.debug(f"{i=}")
+            src_fullpath = os.path.join(self.src, i)
+            dst_fullpath = os.path.join(self.dst, i)
+            if os.path.isfile(src_fullpath):
+                if not os.path.exists(dst_fullpath):
+                    # dst 对应路径不存在文件，执行同步
+                    shutil.copy2(src_fullpath, dst_fullpath)
+                    self.logger.notice(
+                        f"copying file: {src_fullpath} --> {dst_fullpath}")
                 else:
-                    if not os.path.exists(dst_fullpath):
-                        os.mkdir(dst_fullpath)
-                        shutil.copystat(src_fullpath, dst_fullpath)
-                        self.logger.notice(
-                            f"copying dir: {src_fullpath} --> {dst_fullpath}")
-                    else:
-                        self.logger.notice(
-                            f"skipping dir: {src_fullpath} --> {dst_fullpath}")
+                    self.logger.notice(
+                        f"skipping file: {src_fullpath} --> {dst_fullpath}")
+                if not self.pur_prior and (os.path.dirname(i) in temp_remove or i in temp_remove):
+                    self.delete_single(src_fullpath)
+            else:
+                if not os.path.exists(dst_fullpath):
+                    os.mkdir(dst_fullpath)
+                    shutil.copystat(src_fullpath, dst_fullpath)
+                    self.logger.notice(
+                        f"copying dir: {src_fullpath} --> {dst_fullpath}")
+                else:
+                    self.logger.notice(
+                        f"skipping dir: {src_fullpath} --> {dst_fullpath}")
 
-                    if os.path.dirname(i) in temp_remove:
-                        temp_remove.append(i)
-                #############
-                if i in self.move_files.keys():
-                    if self.move_files[i]:
-                        # move 函数中本身已经记录了日志，这里就无需二遍记录了
-                        if os.path.isabs(self.move_files[i]):
-                            self.logger.info(f"绝对路径：修正后为 {self.move_files[i]}")
-                            self.move(src_fullpath, self.move_files[i])
-                        else:
-                            self.logger.info(f"相对路径：修正后为 {os.path.join(
-                                self.src, self.move_files[i])}")
-                            self.move(src_fullpath, os.path.join(
-                                self.src, self.move_files[i]))
+                if os.path.dirname(i) in temp_remove:
+                    temp_remove.append(i)
+            #############
+            if i in self.move_files.keys():
+                if self.move_files[i]:
+                    # move 函数中本身已经记录了日志，这里就无需二遍记录了
+                    if os.path.isabs(self.move_files[i]):
+                        self.logger.info(f"绝对路径：修正后为 {self.move_files[i]}")
+                        self.move(src_fullpath, self.move_files[i])
                     else:
-                        # delete 同上
-                        self.logger.info(
-                            f"不要重复删除：{src_fullpath}")
-                #############
-            if not self.pur_prior:
-                self.touch_pr(self.touch_files, self.src)
-                self.logger.debug(f"{temp_remove=}")
-                for k in reversed(temp_remove):
-                    self.delete_single(os.path.join(self.src, k))
-        else:
-            self.logger.notice(f"{self.src}: is_synchronizable 不允许同步")
+                        self.logger.info(f"相对路径：修正后为 {os.path.join(
+                            self.src, self.move_files[i])}")
+                        self.move(src_fullpath, os.path.join(
+                            self.src, self.move_files[i]))
+                else:
+                    # delete 同上
+                    self.logger.info(
+                        f"不要重复删除：{src_fullpath}")
+            #############
+        if not self.pur_prior:
+            self.touch_pr(self.touch_files, self.src)
+            self.logger.debug(f"{temp_remove=}")
+            for k in reversed(temp_remove):
+                # TODO: 是用 delete 还是用 delete_single 函数？
+                self.delete_single(os.path.join(self.src, k))
+
+    def run(self):
+        return super().run()
 
 
 class RepSpp(ReplacementSync):
@@ -590,6 +593,20 @@ class DeviceSync(BaseSynchronization):
         else:
             self.logger.error(f"检查 [{root_fp}] 的卷 ID 失败")
         super().run()
+
+
+class LO_Sync(BaseSynchronization):
+    # list only，只列取文件目录，而不进行同步
+    def sync(self):
+        for i in self.list_src(self.src):
+            src_fullpath = os.path.join(self.src, i)
+            dst_fullpath = os.path.join(self.dst, i)
+            if os.path.isfile(src_fullpath):
+                self.logger.notice(
+                    f"listing file: {src_fullpath} --> {dst_fullpath}")
+            else:
+                self.logger.notice(
+                    f"listing dir: {src_fullpath} --> {dst_fullpath}")
 
 
 all_instance: tuple[type[BaseSynchronization]] = (
